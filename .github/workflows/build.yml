@@ -51,6 +51,11 @@ jobs:
     permissions:
       contents: read
       packages: write
+    env:
+      ALIYUN_REGISTRY_USERNAME: ${{ secrets.ALIYUN_REGISTRY_USERNAME }}
+      ALIYUN_REGISTRY_PASSWORD: ${{ secrets.ALIYUN_REGISTRY_PASSWORD }}
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_PASSWORD: ${{ secrets.DOCKERHUB_PASSWORD }}
 
     steps:
       - uses: actions/checkout@v5
@@ -67,19 +72,19 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Login to Aliyun
-        if: github.event_name != 'pull_request' && secrets.ALIYUN_REGISTRY_USERNAME != '' && secrets.ALIYUN_REGISTRY_PASSWORD != ''
+        if: github.event_name != 'pull_request' && env.ALIYUN_REGISTRY_USERNAME != '' && env.ALIYUN_REGISTRY_PASSWORD != ''
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY_ALIYUN }}
-          username: ${{ secrets.ALIYUN_REGISTRY_USERNAME }}
-          password: ${{ secrets.ALIYUN_REGISTRY_PASSWORD }}
+          username: ${{ env.ALIYUN_REGISTRY_USERNAME }}
+          password: ${{ env.ALIYUN_REGISTRY_PASSWORD }}
 
       - name: Login to Docker Hub
-        if: github.event_name != 'pull_request' && secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_PASSWORD != ''
+        if: github.event_name != 'pull_request' && env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_PASSWORD != ''
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_PASSWORD }}
+          username: ${{ env.DOCKERHUB_USERNAME }}
+          password: ${{ env.DOCKERHUB_PASSWORD }}
 
       - name: Extract metadata
         id: meta
@@ -87,8 +92,8 @@ jobs:
         with:
           images: |
             ghcr.io/${{ github.repository }}-server
-            ${{ secrets.ALIYUN_REGISTRY_USERNAME != '' && secrets.ALIYUN_REGISTRY_PASSWORD != '' && format('{0}/{1}-server', env.REGISTRY_ALIYUN, env.IMAGE_NAME_ALIYUN) || '' }}
-            ${{ secrets.DOCKERHUB_USERNAME != '' && format('{0}/texas-poker-server', secrets.DOCKERHUB_USERNAME) || '' }}
+            ${{ env.ALIYUN_REGISTRY_USERNAME != '' && env.ALIYUN_REGISTRY_PASSWORD != '' && format('{0}/{1}-server', env.REGISTRY_ALIYUN, env.IMAGE_NAME_ALIYUN) || '' }}
+            ${{ env.DOCKERHUB_USERNAME != '' && format('{0}/texas-poker-server', env.DOCKERHUB_USERNAME) || '' }}
           tags: |
             type=ref,event=branch
             type=ref,event=pr
@@ -113,6 +118,11 @@ jobs:
     permissions:
       contents: read
       packages: write
+    env:
+      ALIYUN_REGISTRY_USERNAME: ${{ secrets.ALIYUN_REGISTRY_USERNAME }}
+      ALIYUN_REGISTRY_PASSWORD: ${{ secrets.ALIYUN_REGISTRY_PASSWORD }}
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_PASSWORD: ${{ secrets.DOCKERHUB_PASSWORD }}
 
     steps:
       - uses: actions/checkout@v5
@@ -129,19 +139,19 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Login to Aliyun
-        if: github.event_name != 'pull_request' && secrets.ALIYUN_REGISTRY_USERNAME != '' && secrets.ALIYUN_REGISTRY_PASSWORD != ''
+        if: github.event_name != 'pull_request' && env.ALIYUN_REGISTRY_USERNAME != '' && env.ALIYUN_REGISTRY_PASSWORD != ''
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY_ALIYUN }}
-          username: ${{ secrets.ALIYUN_REGISTRY_USERNAME }}
-          password: ${{ secrets.ALIYUN_REGISTRY_PASSWORD }}
+          username: ${{ env.ALIYUN_REGISTRY_USERNAME }}
+          password: ${{ env.ALIYUN_REGISTRY_PASSWORD }}
 
       - name: Login to Docker Hub
-        if: github.event_name != 'pull_request' && secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_PASSWORD != ''
+        if: github.event_name != 'pull_request' && env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_PASSWORD != ''
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_PASSWORD }}
+          username: ${{ env.DOCKERHUB_USERNAME }}
+          password: ${{ env.DOCKERHUB_PASSWORD }}
 
       - name: Extract metadata
         id: meta
@@ -149,8 +159,8 @@ jobs:
         with:
           images: |
             ghcr.io/${{ github.repository }}-web
-            ${{ secrets.ALIYUN_REGISTRY_USERNAME != '' && secrets.ALIYUN_REGISTRY_PASSWORD != '' && format('{0}/{1}-web', env.REGISTRY_ALIYUN, env.IMAGE_NAME_ALIYUN) || '' }}
-            ${{ secrets.DOCKERHUB_USERNAME != '' && format('{0}/texas-poker-web', secrets.DOCKERHUB_USERNAME) || '' }}
+            ${{ env.ALIYUN_REGISTRY_USERNAME != '' && env.ALIYUN_REGISTRY_PASSWORD != '' && format('{0}/{1}-web', env.REGISTRY_ALIYUN, env.IMAGE_NAME_ALIYUN) || '' }}
+            ${{ env.DOCKERHUB_USERNAME != '' && format('{0}/texas-poker-web', env.DOCKERHUB_USERNAME) || '' }}
           tags: |
             type=ref,event=branch
             type=ref,event=pr
