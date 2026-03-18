@@ -171,13 +171,9 @@ export function canStartHand(state: PokerEngineState): boolean {
     return false;
   }
 
-  const eligiblePlayers = state.seats.filter(
-    (player): player is EnginePlayer =>
-      Boolean(player) &&
-      player.stack > 0 &&
-      player.status !== "sit-out" &&
-      player.status !== "out",
-  );
+  const eligiblePlayers = state.seats
+    .filter((player): player is EnginePlayer => player !== null)
+    .filter((player) => player.stack > 0 && player.status !== "sit-out" && player.status !== "out");
   return eligiblePlayers.length >= 2 && eligiblePlayers.every((player) => player.ready && player.presence === "connected");
 }
 
