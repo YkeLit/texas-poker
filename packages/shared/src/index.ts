@@ -35,6 +35,7 @@ export interface RoomConfig {
   smallBlind: number;
   bigBlind: number;
   actionTimeSeconds: number;
+  rebuyCooldownHands: number;
 }
 
 export interface AvailableAction {
@@ -64,6 +65,8 @@ export interface PublicPlayerState {
   revealedCards?: Card[];
   missedHands: number;
   lastAction?: RecentPlayerAction;
+  rebuyRemainingHands: number;
+  canRebuy: boolean;
 }
 
 export interface SeatState {
@@ -180,12 +183,13 @@ export const cardSchema = z.object({
 
 export const roomConfigSchema = z.object({
   maxPlayers: z.number().int().min(MIN_TABLE_PLAYERS).max(MAX_TABLE_PLAYERS),
-  startingStack: z.number().int().refine((value) => STARTING_STACK_PRESETS.includes(value as (typeof STARTING_STACK_PRESETS)[number])),
+  startingStack: z.number().int().positive(),
   smallBlind: z.number().int().positive(),
   bigBlind: z.number().int().positive(),
-  actionTimeSeconds: z.number().int().refine((value) => ACTION_TIME_PRESETS.includes(value as (typeof ACTION_TIME_PRESETS)[number])),
-}).refine((value) => value.bigBlind === value.smallBlind * 2, {
-  message: "bigBlind must be exactly double the smallBlind",
+  actionTimeSeconds: z.number().int().positive(),
+  rebuyCooldownHands: z.number().int().min(0),
+}).refine((value) => value.bigBlind >= value.smallBlind, {
+  message: "bigBlind must be greater than or equal to smallBlind",
   path: ["bigBlind"],
 });
 

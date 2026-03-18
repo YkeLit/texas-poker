@@ -24,6 +24,7 @@ export function ActionPanel(props: {
   const selfPlayer = selfSeat?.player;
   const isHost = selfPlayer?.isHost ?? false;
   const canStart = isHost && canStartFromSnapshot(props.snapshot);
+  const canShowStartControls = seated && (props.snapshot.stage === "waiting" || props.snapshot.stage === "showdown");
 
   return (
     <section className={`action-panel ${seated ? "" : "is-compact"}`.trim()}>
@@ -38,19 +39,36 @@ export function ActionPanel(props: {
 
       {!seated && <p className="muted-copy">点击任意空位入座，然后准备开局。</p>}
 
-      {seated && props.snapshot.stage === "waiting" && (
+      {seated && selfPlayer?.status === "out" && (
+        <div className="rebuy-panel">
+          <h3>补充筹码</h3>
+          {selfPlayer.canRebuy ? (
+            <>
+              <p className="muted-copy">你已经输光，可以手动补充到 {props.snapshot.config.startingStack} 筹码后重新准备。</p>
+              <button type="button" className="primary-btn" onClick={() => props.onAction({ type: "rebuy" })}>
+                补充筹码
+              </button>
+            </>
+          ) : (
+            <p className="muted-copy">你已经输光，还需等待 {selfPlayer.rebuyRemainingHands} 局后才能补充筹码。</p>
+          )}
+        </div>
+      )}
+
+      {canShowStartControls && (
         <>
           <div className="ready-row">
             <button
               type="button"
               className={selfPlayer?.ready ? "secondary-btn" : "success-btn"}
+              disabled={selfPlayer?.status === "out"}
               onClick={() => props.onToggleReady(!(selfPlayer?.ready ?? false))}
             >
               {selfPlayer?.ready ? "取消准备" : "准备"}
             </button>
             {canStart && (
               <button id="start-hand-btn" type="button" className="primary-btn" onClick={props.onStartHand}>
-                开始第一手
+                {props.snapshot.handNumber > 0 ? "开始下一手" : "开始第一手"}
               </button>
             )}
           </div>
@@ -71,7 +89,7 @@ export function ActionPanel(props: {
         </div>
       )}
 
-      {availableActions.length > 0 && (
+      {availableActions.length > 0 && selfPlayer?.status !== "out" && (
         <>
           {wagerAction && (
             <label className="range-label">
@@ -173,13 +191,14 @@ function resolveWagerAmount(draft: number | "", action?: AvailableAction) {
 }
 
 function canStartFromSnapshot(snapshot: RoomSnapshot) {
-  if (snapshot.stage !== "waiting") {
+  if (snapshot.stage !== "waiting" && snapshot.stage !== "showdown") {
     return false;
   }
 
   const seatedPlayers = snapshot.seats
     .map((seat) => seat.player)
-    .filter((player): player is NonNullable<RoomSnapshot["seats"][number]["player"]> => Boolean(player));
+    .filter((player): player is NonNullable<RoomSnapshot["seats"][number]["player"]> => player !== undefined)
+    .filter((player) => player.stack > 0 && player.status !== "sit-out" && player.status !== "out");
 
-  return seatedPlayers.length >= 2 && seatedPlayers.every((player) => player.ready && player.presence === "connected" && player.status !== "sit-out");
+  return seatedPlayers.length >= 2 && seatedPlayers.every((player) => player.ready && player.presence === "connected");
 }

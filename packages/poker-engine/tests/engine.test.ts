@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Card, RoomConfig } from "@texas-poker/shared";
-import { applyPlayerAction, canStartHand, createPokerEngine, getAvailableActions, seatPlayer, setPlayerReady, startHand } from "../src/engine";
+import { applyPlayerAction, canRebuyChips, canStartHand, createPokerEngine, getAvailableActions, rebuyChips, seatPlayer, setPlayerReady, startHand } from "../src/engine";
 import { evaluateSevenCards } from "../src/hand-evaluator";
 
 const config: RoomConfig = {
@@ -9,6 +9,7 @@ const config: RoomConfig = {
   smallBlind: 10,
   bigBlind: 20,
   actionTimeSeconds: 15,
+  rebuyCooldownHands: 1,
 };
 
 function setupTable(playerCount = 3) {
@@ -206,6 +207,51 @@ describe("poker engine", () => {
     expect(state.board).toHaveLength(0);
     expect(state.seats[0]?.holeCards).toHaveLength(2);
     expect(state.seats[1]?.holeCards).toHaveLength(2);
+  });
+
+  it("requires waiting hands before busted players can rebuy", () => {
+    const state = setupTable(3);
+    const seat0 = state.seats[0]!;
+    const seat1 = state.seats[1]!;
+    const seat2 = state.seats[2]!;
+
+    seat0.stack = 20;
+    seat0.currentBet = 10;
+    seat1.stack = 2000;
+    seat1.currentBet = 20;
+    seat2.stack = 20;
+    seat2.currentBet = 0;
+
+    seat0.holeCards = [asCard("clubs", 2), asCard("diamonds", 7)];
+    seat1.holeCards = [asCard("spades", 14), asCard("hearts", 14)];
+    seat2.holeCards = [asCard("clubs", 9), asCard("spades", 9)];
+    state.deck = [
+      asCard("hearts", 10),
+      asCard("spades", 11),
+      asCard("diamonds", 12),
+      asCard("clubs", 13),
+      asCard("hearts", 3),
+    ];
+
+    applyPlayerAction(state, 0, { type: "all_in" }, new Date("2026-03-18T12:00:01.000Z"));
+    applyPlayerAction(state, 1, { type: "call" }, new Date("2026-03-18T12:00:02.000Z"));
+    applyPlayerAction(state, 2, { type: "all_in" }, new Date("2026-03-18T12:00:03.000Z"));
+
+    expect(state.seats[0]?.status).toBe("out");
+    expect(state.seats[0]?.stack).toBe(0);
+    expect(state.seats[0]?.rebuyHandsRemaining).toBe(1);
+    expect(canRebuyChips(state, 0)).toBe(false);
+
+    startHand(state, new Date("2026-03-18T12:00:10.000Z"));
+    applyPlayerAction(state, 1, { type: "fold" }, new Date("2026-03-18T12:00:11.000Z"));
+
+    expect(state.seats[0]?.rebuyHandsRemaining).toBe(0);
+    expect(canRebuyChips(state, 0)).toBe(true);
+
+    rebuyChips(state, 0);
+    expect(state.seats[0]?.stack).toBe(1000);
+    expect(state.seats[0]?.status).toBe("waiting");
+    expect(state.seats[0]?.ready).toBe(false);
   });
 });
 

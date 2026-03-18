@@ -1,28 +1,36 @@
 import { describe, expect, it } from "vitest";
-import { BLIND_PRESETS, isBlindPreset, roomConfigSchema } from "../src";
+import { roomConfigSchema } from "../src";
 
 describe("shared schemas", () => {
-  it("accepts supported blind presets", () => {
+  it("accepts custom room config values", () => {
     const parsed = roomConfigSchema.parse({
       maxPlayers: 6,
-      startingStack: 1000,
-      smallBlind: BLIND_PRESETS[0].smallBlind,
-      bigBlind: BLIND_PRESETS[0].bigBlind,
-      actionTimeSeconds: 15,
+      startingStack: 1350,
+      smallBlind: 15,
+      bigBlind: 30,
+      actionTimeSeconds: 18,
+      rebuyCooldownHands: 2,
     });
 
-    expect(isBlindPreset(parsed)).toBe(true);
+    expect(parsed).toMatchObject({
+      startingStack: 1350,
+      smallBlind: 15,
+      bigBlind: 30,
+      actionTimeSeconds: 18,
+      rebuyCooldownHands: 2,
+    });
   });
 
-  it("flags unsupported blind presets at the business-rule layer", () => {
-    const parsed = roomConfigSchema.parse({
-      maxPlayers: 6,
-      startingStack: 1000,
-      smallBlind: 25,
-      bigBlind: 50,
-      actionTimeSeconds: 15,
-    });
-
-    expect(isBlindPreset(parsed)).toBe(false);
+  it("rejects invalid blind ordering", () => {
+    expect(() =>
+      roomConfigSchema.parse({
+        maxPlayers: 6,
+        startingStack: 1000,
+        smallBlind: 50,
+        bigBlind: 25,
+        actionTimeSeconds: 15,
+        rebuyCooldownHands: 1,
+      }),
+    ).toThrow();
   });
 });

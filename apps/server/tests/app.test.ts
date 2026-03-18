@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChatMessage, GuestSession, HandResult, RoomConfig } from "@texas-poker/shared";
 import { buildApp } from "../src/app";
 import { normalizeClientOrigins, readConfig } from "../src/config";
@@ -18,6 +18,7 @@ const FAST_CONFIG: RoomConfig = {
   smallBlind: 10,
   bigBlind: 20,
   actionTimeSeconds: 1,
+  rebuyCooldownHands: 1,
 };
 
 class InMemoryPersistenceAdapter implements PersistenceAdapter {
@@ -92,6 +93,7 @@ describe("server integration", () => {
           smallBlind: 10,
           bigBlind: 20,
           actionTimeSeconds: 15,
+          rebuyCooldownHands: 2,
         },
       },
     });
@@ -230,6 +232,89 @@ describe("server integration", () => {
     const resumed = await instance.roomService.resumeSession(room.roomCode, guest.sessionId, guest.resumeToken);
     expect(resumed.yourSeatIndex).toBe(1);
     expect(resumed.seats[1]?.player?.presence).toBe("connected");
+  });
+
+  it("does not auto-start the next hand after showdown", async () => {
+    vi.useFakeTimers();
+    try {
+      const [host, guest] = await Promise.all([
+        instance.roomService.createGuestSession("房主"),
+        instance.roomService.createGuestSession("玩家二"),
+      ]);
+      const room = await instance.roomService.createRoom(host.sessionId, FAST_CONFIG);
+
+      await instance.roomService.takeSeat(room.roomCode, host.sessionId, 0);
+      await instance.roomService.takeSeat(room.roomCode, guest.sessionId, 1);
+      await instance.roomService.toggleReady(room.roomCode, host.sessionId, true);
+      await instance.roomService.toggleReady(room.roomCode, guest.sessionId, true);
+      await instance.roomService.startHand(room.roomCode, host.sessionId);
+      await instance.roomService.submitAction(room.roomCode, host.sessionId, { type: "fold" });
+
+      vi.advanceTimersByTime(6_000);
+
+      const snapshot = instance.roomService.buildSnapshot(room.roomCode, host.sessionId);
+      expect(snapshot.stage).toBe("showdown");
+      expect(snapshot.handNumber).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("allows a busted player to rebuy after the configured cooldown", async () => {
+    const [host, guest, third] = await Promise.all([
+      instance.roomService.createGuestSession("房主"),
+      instance.roomService.createGuestSession("玩家二"),
+      instance.roomService.createGuestSession("玩家三"),
+    ]);
+    const room = await instance.roomService.createRoom(host.sessionId, {
+      ...FAST_CONFIG,
+      maxPlayers: 3,
+    });
+
+    await instance.roomService.takeSeat(room.roomCode, host.sessionId, 0);
+    await instance.roomService.takeSeat(room.roomCode, guest.sessionId, 1);
+    await instance.roomService.takeSeat(room.roomCode, third.sessionId, 2);
+    await instance.roomService.toggleReady(room.roomCode, host.sessionId, true);
+    await instance.roomService.toggleReady(room.roomCode, guest.sessionId, true);
+    await instance.roomService.toggleReady(room.roomCode, third.sessionId, true);
+    await instance.roomService.startHand(room.roomCode, host.sessionId);
+
+    const roomRuntime = (instance.roomService as unknown as { rooms: Map<string, { engine: { seats: Array<any>; deck: Array<any> } }> }).rooms.get(room.roomCode)!;
+    roomRuntime.engine.seats[0].stack = 20;
+    roomRuntime.engine.seats[0].currentBet = 10;
+    roomRuntime.engine.seats[1].currentBet = 20;
+    roomRuntime.engine.seats[2].stack = 20;
+    roomRuntime.engine.seats[2].currentBet = 0;
+    roomRuntime.engine.seats[0].holeCards = [{ suit: "clubs", rank: 2 }, { suit: "diamonds", rank: 7 }];
+    roomRuntime.engine.seats[1].holeCards = [{ suit: "spades", rank: 14 }, { suit: "hearts", rank: 14 }];
+    roomRuntime.engine.seats[2].holeCards = [{ suit: "clubs", rank: 9 }, { suit: "spades", rank: 9 }];
+    roomRuntime.engine.deck = [
+      { suit: "hearts", rank: 10 },
+      { suit: "spades", rank: 11 },
+      { suit: "diamonds", rank: 12 },
+      { suit: "clubs", rank: 13 },
+      { suit: "hearts", rank: 3 },
+    ];
+
+    await instance.roomService.submitAction(room.roomCode, host.sessionId, { type: "all_in" });
+    await instance.roomService.submitAction(room.roomCode, guest.sessionId, { type: "call" });
+    await instance.roomService.submitAction(room.roomCode, third.sessionId, { type: "all_in" });
+
+    let snapshot = instance.roomService.buildSnapshot(room.roomCode, host.sessionId);
+    expect(snapshot.seats[0]?.player?.status).toBe("out");
+    expect(snapshot.seats[0]?.player?.rebuyRemainingHands).toBe(1);
+
+    await instance.roomService.toggleReady(room.roomCode, guest.sessionId, true);
+    await instance.roomService.toggleReady(room.roomCode, third.sessionId, true);
+    await instance.roomService.startHand(room.roomCode, host.sessionId);
+    await instance.roomService.submitAction(room.roomCode, guest.sessionId, { type: "fold" });
+
+    snapshot = instance.roomService.buildSnapshot(room.roomCode, host.sessionId);
+    expect(snapshot.seats[0]?.player?.canRebuy).toBe(true);
+
+    const rebought = await instance.roomService.rebuyPlayer(room.roomCode, host.sessionId);
+    expect(rebought.seats[0]?.player?.stack).toBe(1000);
+    expect(rebought.seats[0]?.player?.ready).toBe(false);
   });
 
   it("throttles chat messages and transfers the host role when the host leaves", async () => {

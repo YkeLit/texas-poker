@@ -14,6 +14,7 @@ const snapshot: RoomSnapshot = {
     smallBlind: 10,
     bigBlind: 20,
     actionTimeSeconds: 15,
+    rebuyCooldownHands: 2,
   },
   hostSessionId: "host",
   handNumber: 1,
@@ -43,6 +44,8 @@ const snapshot: RoomSnapshot = {
         canAct: true,
         holeCardCount: 2,
         missedHands: 0,
+        rebuyRemainingHands: 0,
+        canRebuy: false,
       },
     },
     {
@@ -62,6 +65,8 @@ const snapshot: RoomSnapshot = {
         canAct: false,
         holeCardCount: 2,
         missedHands: 0,
+        rebuyRemainingHands: 0,
+        canRebuy: false,
       },
     },
     { seatIndex: 2, occupied: false },
@@ -127,6 +132,7 @@ describe("web components", () => {
   it("only shows the start button when every seated player is ready", () => {
     const waitingSnapshot: RoomSnapshot = {
       ...snapshot,
+      handNumber: 0,
       stage: "waiting",
       actingSeatIndex: null,
       currentBet: 0,
@@ -152,6 +158,8 @@ describe("web components", () => {
             canAct: false,
             holeCardCount: 2,
             missedHands: 0,
+            rebuyRemainingHands: 0,
+            canRebuy: false,
           },
         },
         ...snapshot.seats.slice(3),
@@ -192,6 +200,35 @@ describe("web components", () => {
       />,
     );
     expect(readyMarkup).toContain("开始第一手");
+  });
+
+  it("shows the manual next-hand button after showdown", () => {
+    const markup = renderToStaticMarkup(
+      <ActionPanel
+        snapshot={{
+          ...snapshot,
+          stage: "showdown",
+          yourAvailableActions: [],
+          seats: snapshot.seats.map((seat) =>
+            seat.player
+              ? {
+                  ...seat,
+                  player: {
+                    ...seat.player,
+                    ready: true,
+                  },
+                }
+              : seat,
+          ),
+        }}
+        onAction={() => undefined}
+        onToggleReady={() => undefined}
+        onStartHand={() => undefined}
+        onLeaveSeat={() => undefined}
+      />,
+    );
+
+    expect(markup).toContain("开始下一手");
   });
 
   it("renders the latest player action on seat cards", () => {

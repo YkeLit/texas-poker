@@ -30,6 +30,7 @@ export interface EnginePlayer {
   revealedCards?: Card[];
   missedHands: number;
   lastAction?: RecentPlayerAction;
+  rebuyHandsRemaining: number;
 }
 
 export interface PokerEngineState {
@@ -109,6 +110,7 @@ export function seatPlayer(
     presence: "connected",
     holeCards: [],
     missedHands: 0,
+    rebuyHandsRemaining: 0,
   };
 
   player.nickname = input.nickname;
@@ -136,6 +138,9 @@ export function removePlayerFromSeat(state: PokerEngineState, seatIndex: number)
 
 export function setPlayerReady(state: PokerEngineState, seatIndex: number, ready: boolean): void {
   const player = requirePlayer(state, seatIndex);
+  if (ready && (player.stack <= 0 || player.status === "out")) {
+    throw new Error("Player must rebuy before getting ready");
+  }
   player.ready = ready;
   if (ready) {
     player.status = "waiting";
@@ -166,8 +171,14 @@ export function canStartHand(state: PokerEngineState): boolean {
     return false;
   }
 
-  const seatedPlayers = state.seats.filter((player): player is EnginePlayer => Boolean(player));
-  return seatedPlayers.length >= 2 && seatedPlayers.every((player) => player.ready && player.presence === "connected" && player.status !== "sit-out");
+  const eligiblePlayers = state.seats.filter(
+    (player): player is EnginePlayer =>
+      Boolean(player) &&
+      player.stack > 0 &&
+      player.status !== "sit-out" &&
+      player.status !== "out",
+  );
+  return eligiblePlayers.length >= 2 && eligiblePlayers.every((player) => player.ready && player.presence === "connected");
 }
 
 export function startHand(state: PokerEngineState, now = new Date()): void {
@@ -180,13 +191,6 @@ export function startHand(state: PokerEngineState, now = new Date()): void {
   }
 
   const eligibleSeatIndexes = getEligibleSeatIndexes(state);
-
-  for (const seatIndex of eligibleSeatIndexes) {
-    const player = requirePlayer(state, seatIndex);
-    if (player.stack < state.config.startingStack) {
-      player.stack = state.config.startingStack;
-    }
-  }
 
   state.handNumber += 1;
   state.lastResult = undefined;
@@ -213,7 +217,7 @@ export function startHand(state: PokerEngineState, now = new Date()): void {
     maybePlayer.revealedCards = undefined;
     if (eligibleSeatIndexes.includes(seatIndex)) {
       maybePlayer.status = "active";
-    } else if (maybePlayer.status !== "sit-out") {
+    } else if (maybePlayer.status !== "sit-out" && maybePlayer.status !== "out") {
       maybePlayer.status = "waiting";
     }
   }
@@ -391,6 +395,25 @@ export function getNextHandStartsAt(lastResultAt: Date): string {
   return new Date(lastResultAt.getTime() + NEXT_HAND_DELAY_MS).toISOString();
 }
 
+export function canRebuyChips(state: PokerEngineState, seatIndex: number): boolean {
+  const player = requirePlayer(state, seatIndex);
+  return !isHandActive(state.stage) && player.stack <= 0 && player.status === "out" && player.rebuyHandsRemaining <= 0;
+}
+
+export function rebuyChips(state: PokerEngineState, seatIndex: number): void {
+  if (!canRebuyChips(state, seatIndex)) {
+    throw new Error("Player cannot rebuy yet");
+  }
+
+  const player = requirePlayer(state, seatIndex);
+  player.stack = state.config.startingStack;
+  player.currentBet = 0;
+  player.totalCommitted = 0;
+  player.ready = false;
+  player.status = "waiting";
+  player.rebuyHandsRemaining = 0;
+}
+
 function progressState(state: PokerEngineState, now: Date, lastActedSeat?: number): void {
   while (true) {
     const contenders = getContendingSeats(state);
@@ -534,6 +557,7 @@ function concludeShowdown(state: PokerEngineState, now: Date): void {
 }
 
 function finishHand(state: PokerEngineState, result: HandResult, now: Date, revealedSeats: number[]): void {
+  const bustedSeatIndexes = new Set<number>();
   for (const seatIndex of state.participatingSeatIndexes) {
     const player = requirePlayer(state, seatIndex);
     if (!revealedSeats.includes(seatIndex)) {
@@ -554,7 +578,24 @@ function finishHand(state: PokerEngineState, result: HandResult, now: Date, reve
     }
 
     if (player.status !== "sit-out") {
-      player.status = player.ready ? "waiting" : "waiting";
+      if (player.stack <= 0) {
+        player.ready = false;
+        player.status = "out";
+        player.rebuyHandsRemaining = state.config.rebuyCooldownHands;
+        bustedSeatIndexes.add(seatIndex);
+      } else {
+        player.status = "waiting";
+        player.rebuyHandsRemaining = 0;
+      }
+    }
+  }
+
+  for (const [seatIndex, player] of state.seats.entries()) {
+    if (!player || bustedSeatIndexes.has(seatIndex)) {
+      continue;
+    }
+    if (player.status === "out" && player.stack <= 0 && player.rebuyHandsRemaining > 0) {
+      player.rebuyHandsRemaining -= 1;
     }
   }
 
@@ -604,7 +645,7 @@ function calculatePotStates(state: PokerEngineState, showdownOnly: boolean): Pot
 function getEligibleSeatIndexes(state: PokerEngineState): number[] {
   return state.seats
     .map((player, seatIndex) => ({ player, seatIndex }))
-    .filter(({ player }) => player && player.ready && player.status !== "sit-out")
+    .filter(({ player }) => player && player.stack > 0 && player.ready && player.status !== "sit-out" && player.status !== "out")
     .map(({ seatIndex }) => seatIndex);
 }
 
