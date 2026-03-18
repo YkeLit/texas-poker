@@ -1,0 +1,58 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model GuestSession {
+  id          String   @id @default(cuid())
+  sessionId   String   @unique
+  nickname    String
+  resumeToken String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  rooms       Room[]   @relation("RoomOwner")
+  chatLogs    ChatLog[]
+}
+
+model Room {
+  id                String        @id @default(cuid())
+  roomCode          String        @unique
+  hostSessionId     String
+  maxPlayers        Int
+  startingStack     Int
+  smallBlind        Int
+  bigBlind          Int
+  actionTimeSeconds Int
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  hostSession       GuestSession  @relation("RoomOwner", fields: [hostSessionId], references: [sessionId])
+  handHistories     HandHistory[]
+  chatLogs          ChatLog[]
+}
+
+model HandHistory {
+  id         String   @id @default(cuid())
+  roomCode   String
+  handNumber Int
+  payload    Json
+  createdAt  DateTime @default(now())
+  room       Room     @relation(fields: [roomCode], references: [roomCode])
+
+  @@unique([roomCode, handNumber])
+}
+
+model ChatLog {
+  id              String        @id @default(cuid())
+  roomCode        String
+  senderSessionId String?
+  nickname        String?
+  type            String
+  content         String
+  createdAt       DateTime      @default(now())
+  room            Room          @relation(fields: [roomCode], references: [roomCode])
+  sender          GuestSession? @relation(fields: [senderSessionId], references: [sessionId])
+}

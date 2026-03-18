@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Build output
+dist/
+**/dist/
+.vite/
+coverage/
+.turbo/
+
+# Logs and test artifacts
+*.log
+playwright-report/
+test-results/
+
+# Local environment files
+.env
+.env.*
+
+# OS files
+.DS_Store
+
+# Generated server files
+apps/server/generated/
+apps/server/prisma/dev.db
+apps/server/prisma/dev.db-journal

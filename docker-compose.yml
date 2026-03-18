@@ -1,0 +1,49 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: texas_poker
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  server:
+    build:
+      context: .
+      dockerfile: ./apps/server/Dockerfile
+    environment:
+      HOST: 0.0.0.0
+      PORT: 3001
+      CLIENT_ORIGIN: http://127.0.0.1:5173
+      TOKEN_SECRET: local-dev-secret
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/texas_poker
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      - postgres
+      - redis
+    ports:
+      - "3001:3001"
+
+  web:
+    build:
+      context: .
+      dockerfile: ./apps/web/Dockerfile
+    environment:
+      VITE_SERVER_ORIGIN: http://server:3001
+    depends_on:
+      - server
+    ports:
+      - "5173:5173"
+
+volumes:
+  postgres-data:

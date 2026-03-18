@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Node",
+    "strict": true,
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "useDefineForClassFields": true,
+    "noUncheckedIndexedAccess": true,
+    "allowSyntheticDefaultImports": true,
+    "paths": {
+      "@texas-poker/shared": ["packages/shared/src/index.ts"],
+      "@texas-poker/poker-engine": ["packages/poker-engine/src/index.ts"]
+    },
+    "types": ["node"]
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "name": "@texas-poker/poker-engine",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@texas-poker/shared": "workspace:*"
+  }
+}

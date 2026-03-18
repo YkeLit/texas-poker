@@ -1,0 +1,30 @@
+{
+  "name": "texas-poker",
+  "private": true,
+  "packageManager": "pnpm@10.6.2",
+  "devDependencies": {
+    "@playwright/test": "^1.53.0",
+    "@types/node": "^24.0.3",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "@vitejs/plugin-react": "^4.4.1",
+    "jsdom": "^26.1.0",
+    "tsup": "^8.5.0",
+    "tsx": "^4.20.3",
+    "typescript": "^5.8.3",
+    "vite": "^7.0.0",
+    "vite-tsconfig-paths": "^5.1.4",
+    "vitest": "^3.2.4",
+    "wait-on": "^8.0.3"
+  },
+  "scripts": {
+    "dev": "corepack pnpm --parallel --filter @texas-poker/server --filter @texas-poker/web dev",
+    "dev:server": "corepack pnpm --filter @texas-poker/server dev",
+    "dev:web": "corepack pnpm --filter @texas-poker/web dev",
+    "build": "corepack pnpm -r build",
+    "test": "corepack pnpm -r test",
+    "test:engine": "corepack pnpm --filter @texas-poker/poker-engine test",
+    "test:server": "corepack pnpm --filter @texas-poker/server test",
+    "test:web": "corepack pnpm --filter @texas-poker/web test"
+  }
+}
