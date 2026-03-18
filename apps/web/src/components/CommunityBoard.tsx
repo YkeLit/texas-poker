@@ -1,4 +1,5 @@
 import type { Card, PotState } from "@texas-poker/shared";
+import { PlayingCard } from "./PlayingCard";
 
 export function CommunityBoard(props: {
   board: Card[];
@@ -17,11 +18,7 @@ export function CommunityBoard(props: {
       <div className="board-cards" aria-label="公共牌">
         {Array.from({ length: 5 }, (_, index) => {
           const card = props.board[index];
-          return (
-            <div key={index} className={`card-tile ${card ? "" : "is-empty"}`}>
-              {card ? cardLabel(card) : "?"}
-            </div>
-          );
+          return <PlayingCard key={index} card={card} />;
         })}
       </div>
       <div className="pot-strip">
@@ -41,15 +38,4 @@ function stageLabel(stage: string) {
     river: "河牌",
     showdown: "摊牌",
   }[stage] ?? stage;
-}
-
-function cardLabel(card: Card) {
-  const rank = card.rank <= 10 ? String(card.rank) : ({ 11: "J", 12: "Q", 13: "K", 14: "A" }[card.rank] ?? "?");
-  const suit = {
-    clubs: "♣",
-    diamonds: "♦",
-    hearts: "♥",
-    spades: "♠",
-  }[card.suit];
-  return `${rank}${suit}`;
 }

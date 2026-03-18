@@ -14,10 +14,10 @@ export function ActionPanel(props: {
   const selfSeat = seated ? props.snapshot.seats[props.snapshot.yourSeatIndex!] : undefined;
   const selfPlayer = selfSeat?.player;
   const isHost = selfPlayer?.isHost ?? false;
-  const canStart = isHost && props.snapshot.stage === "waiting" && props.snapshot.seats.filter((seat) => seat.player?.ready).length >= 2;
+  const canStart = isHost && canStartFromSnapshot(props.snapshot);
 
   return (
-    <section className="action-panel">
+    <section className={`action-panel ${seated ? "" : "is-compact"}`.trim()}>
       <div className="action-header">
         <span>{seated ? "你的操作" : "先入座开始"}</span>
         {seated && (
@@ -30,16 +30,23 @@ export function ActionPanel(props: {
       {!seated && <p className="muted-copy">点击任意空位入座，然后准备开局。</p>}
 
       {seated && props.snapshot.stage === "waiting" && (
-        <div className="ready-row">
-          <button type="button" className="primary-btn" onClick={() => props.onToggleReady(!(selfPlayer?.ready ?? false))}>
-            {selfPlayer?.ready ? "取消准备" : "准备"}
-          </button>
-          {canStart && (
-            <button id="start-hand-btn" type="button" className="secondary-btn" onClick={props.onStartHand}>
-              开始第一手
+        <>
+          <div className="ready-row">
+            <button
+              type="button"
+              className={selfPlayer?.ready ? "secondary-btn" : "success-btn"}
+              onClick={() => props.onToggleReady(!(selfPlayer?.ready ?? false))}
+            >
+              {selfPlayer?.ready ? "取消准备" : "准备"}
             </button>
-          )}
-        </div>
+            {canStart && (
+              <button id="start-hand-btn" type="button" className="primary-btn" onClick={props.onStartHand}>
+                开始第一手
+              </button>
+            )}
+          </div>
+          <p className="muted-copy">所有已入座玩家都准备后，房主才可以开始发牌。</p>
+        </>
       )}
 
       {props.snapshot.lastResult && (
@@ -73,7 +80,7 @@ export function ActionPanel(props: {
               <button
                 key={`${action.type}-${action.minAmount ?? 0}-${action.maxAmount ?? 0}`}
                 type="button"
-                className={`action-btn ${action.type === "fold" ? "danger-btn" : ""}`}
+                className={`action-btn ${actionToneClass(action.type)}`}
                 onClick={() => props.onAction(createActionPayload(action, amount))}
               >
                 {actionLabel(action)}
@@ -128,4 +135,26 @@ function maxAmountForActions(actions: AvailableAction[]) {
     .map((action) => action.maxAmount)
     .filter((value): value is number => typeof value === "number")
     .reduce<number | null>((maxValue, value) => (maxValue === null ? value : Math.max(maxValue, value)), null);
+}
+
+function actionToneClass(actionType: AvailableAction["type"]) {
+  if (actionType === "call" || actionType === "check") {
+    return "is-safe";
+  }
+  if (actionType === "bet" || actionType === "raise" || actionType === "all_in") {
+    return "is-aggressive";
+  }
+  return "is-neutral";
+}
+
+function canStartFromSnapshot(snapshot: RoomSnapshot) {
+  if (snapshot.stage !== "waiting") {
+    return false;
+  }
+
+  const seatedPlayers = snapshot.seats
+    .map((seat) => seat.player)
+    .filter((player): player is NonNullable<RoomSnapshot["seats"][number]["player"]> => Boolean(player));
+
+  return seatedPlayers.length >= 2 && seatedPlayers.every((player) => player.ready && player.presence === "connected" && player.status !== "sit-out");
 }

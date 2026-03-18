@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Card, RoomConfig } from "@texas-poker/shared";
-import { applyPlayerAction, createPokerEngine, getAvailableActions, seatPlayer, setPlayerReady, startHand } from "../src/engine";
+import { applyPlayerAction, canStartHand, createPokerEngine, getAvailableActions, seatPlayer, setPlayerReady, startHand } from "../src/engine";
 import { evaluateSevenCards } from "../src/hand-evaluator";
 
 const config: RoomConfig = {
@@ -93,6 +93,29 @@ describe("poker engine", () => {
     expect(state.smallBlindSeatIndex).toBe(0);
     expect(state.bigBlindSeatIndex).toBe(1);
     expect(state.actingSeatIndex).toBe(0);
+  });
+
+  it("requires every seated player to be ready before a hand can start", () => {
+    const state = createPokerEngine(config);
+
+    for (let index = 0; index < 3; index += 1) {
+      seatPlayer(state, {
+        sessionId: `session-${index}`,
+        nickname: `玩家${index + 1}`,
+        seatIndex: index,
+        isHost: index === 0,
+      });
+    }
+
+    setPlayerReady(state, 0, true);
+    setPlayerReady(state, 1, true);
+    expect(canStartHand(state)).toBe(false);
+    expect(() => startHand(state, new Date("2026-03-18T12:00:00.000Z"))).toThrow(
+      "All seated players must be connected and ready, with at least two players",
+    );
+
+    setPlayerReady(state, 2, true);
+    expect(canStartHand(state)).toBe(true);
   });
 
   it("keeps the big blind's raise option open when action returns unopened", () => {

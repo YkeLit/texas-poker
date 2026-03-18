@@ -160,7 +160,12 @@ export function getSeatBySession(state: PokerEngineState, sessionId: string): nu
 }
 
 export function canStartHand(state: PokerEngineState): boolean {
-  return getEligibleSeatIndexes(state).length >= 2 && !isHandActive(state.stage);
+  if (isHandActive(state.stage)) {
+    return false;
+  }
+
+  const seatedPlayers = state.seats.filter((player): player is EnginePlayer => Boolean(player));
+  return seatedPlayers.length >= 2 && seatedPlayers.every((player) => player.ready && player.presence === "connected" && player.status !== "sit-out");
 }
 
 export function startHand(state: PokerEngineState, now = new Date()): void {
@@ -168,10 +173,11 @@ export function startHand(state: PokerEngineState, now = new Date()): void {
     throw new Error("A hand is already in progress");
   }
 
-  const eligibleSeatIndexes = getEligibleSeatIndexes(state);
-  if (eligibleSeatIndexes.length < 2) {
-    throw new Error("At least two ready players are required");
+  if (!canStartHand(state)) {
+    throw new Error("All seated players must be connected and ready, with at least two players");
   }
+
+  const eligibleSeatIndexes = getEligibleSeatIndexes(state);
 
   for (const seatIndex of eligibleSeatIndexes) {
     const player = requirePlayer(state, seatIndex);
