@@ -90,9 +90,21 @@ describe("web components", () => {
   });
 
   it("renders board and pot information", () => {
-    const markup = renderToStaticMarkup(<CommunityBoard board={snapshot.board} pots={snapshot.pots} stage={snapshot.stage} handNumber={snapshot.handNumber} />);
+    const markup = renderToStaticMarkup(
+      <CommunityBoard
+        board={snapshot.board}
+        yourHoleCards={snapshot.yourHoleCards}
+        pots={snapshot.pots}
+        seats={snapshot.seats}
+        yourSeatIndex={snapshot.yourSeatIndex}
+        stage={snapshot.stage}
+        handNumber={snapshot.handNumber}
+      />,
+    );
     expect(markup).toContain("底池 30");
     expect(markup).toContain("翻牌前");
+    expect(markup).toContain("对手下注");
+    expect(markup).toContain("玩家二 20");
   });
 
   it("renders action buttons for the acting player", () => {
@@ -108,7 +120,8 @@ describe("web components", () => {
 
     expect(markup).toContain("弃牌");
     expect(markup).toContain("跟注 10");
-    expect(markup).toContain("加注 40-1000");
+    expect(markup).toContain("下注 / 加注");
+    expect(markup).toContain('placeholder="最小 40"');
   });
 
   it("only shows the start button when every seated player is ready", () => {
@@ -207,5 +220,18 @@ describe("web components", () => {
     );
 
     expect(markup).toContain("加注到 80");
+  });
+
+  it("hides empty seats after the game has started", () => {
+    const markup = renderToStaticMarkup(
+      <SeatRing
+        snapshot={snapshot}
+        onTakeSeat={() => undefined}
+        currentTime={Date.now()}
+      />,
+    );
+
+    expect(markup).not.toContain("3号位");
+    expect(markup).not.toContain("点击入座");
   });
 });

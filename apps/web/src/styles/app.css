@@ -81,10 +81,15 @@ button {
   color: var(--safe);
 }
 
-.hero-copy h1,
-.top-bar h1 {
+.hero-copy h1 {
   margin: 0 0 12px;
   font-size: clamp(2rem, 4vw, 3.2rem);
+}
+
+.top-bar h1 {
+  margin: 0;
+  font-size: clamp(1.35rem, 3vw, 1.9rem);
+  line-height: 1.2;
 }
 
 .hero-copy p,
@@ -190,6 +195,11 @@ select {
   margin: 0 auto;
 }
 
+.top-actions {
+  display: flex;
+  gap: 12px;
+}
+
 .table-layout {
   position: relative;
 }
@@ -225,14 +235,13 @@ select {
 
 .board-panel,
 .seat-panel,
-.seat-ring,
-.hero-status {
+.seat-ring {
   position: relative;
   z-index: 1;
 }
 
 .board-panel {
-  width: min(100%, 720px);
+  width: min(100%, 900px);
   padding: 28px;
   margin: 0 auto;
   text-align: center;
@@ -249,11 +258,47 @@ select {
   align-items: center;
 }
 
-.board-cards {
+.merged-card-row {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: center;
   gap: 16px;
   margin: 24px 0;
+}
+
+.merged-card-group {
+  display: grid;
+  gap: 12px;
+}
+
+.merged-card-group-hero {
+  grid-template-columns: repeat(2, minmax(84px, 104px));
+}
+
+.merged-card-group-hero .card-tile.is-hero {
+  min-height: 134px;
+  min-width: 92px;
+  padding: 14px 0 12px;
+  border-radius: 22px;
+}
+
+.merged-card-group-hero .card-tile.is-hero .card-rank {
+  font-size: clamp(1.9rem, 2.4vw, 2.4rem);
+}
+
+.merged-card-group-hero .card-tile.is-hero .card-suit {
+  font-size: clamp(1.5rem, 1.9vw, 1.8rem);
+}
+
+.merged-card-group-board {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  min-width: 0;
+}
+
+.merged-card-separator {
+  width: 1px;
+  height: 104px;
+  background: linear-gradient(180deg, transparent, rgba(148, 163, 184, 0.3), transparent);
 }
 
 .card-tile {
@@ -419,46 +464,40 @@ select {
   color: #cbd5e1;
 }
 
-.hero-status {
+.bet-focus-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 16px;
-  padding: 14px 18px;
-  border-radius: 18px;
-  background: rgba(15, 23, 42, 0.84);
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  color: var(--text);
+  gap: 12px;
+  margin-top: 14px;
 }
 
-.hero-status-copy {
+.bet-focus-label,
+.bet-focus-empty {
   color: var(--muted);
-  flex: 1 1 240px;
+  font-size: 0.92rem;
 }
 
-.hero-hole-cards {
+.bet-focus-list {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 16px;
-  margin-left: auto;
-  padding: 14px 16px;
-  border-radius: 24px;
-  background: rgba(30, 41, 59, 0.78);
-  border: 1px solid rgba(148, 163, 184, 0.16);
+  justify-content: end;
+  gap: 8px;
 }
 
-.hero-hole-label {
-  color: var(--muted);
-  font-size: 0.78rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.hero-hole-card-list {
-  display: flex;
-  gap: 16px;
+.bet-focus-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(239, 68, 68, 0.14);
+  border: 1px solid rgba(239, 68, 68, 0.16);
+  color: #fecdd3;
+  font-size: 0.84rem;
+  font-weight: 700;
 }
 
 .action-panel,
@@ -479,6 +518,11 @@ select {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
+}
+
+.range-hint {
+  color: var(--muted);
+  font-size: 0.78rem;
 }
 
 .action-btn {
@@ -610,83 +654,154 @@ select {
   .top-bar {
     align-items: start;
     flex-direction: column;
+    gap: 10px;
+  }
+
+  .top-bar h1 {
+    font-size: clamp(1.2rem, 5.8vw, 1.55rem);
+  }
+
+  .top-actions {
+    width: 100%;
+  }
+
+  .table-main {
+    gap: 10px;
+  }
+
+  .table-main > .action-panel {
+    position: sticky;
+    top: 10px;
+    z-index: 6;
+    padding: 14px;
+  }
+
+  .action-header {
+    align-items: start;
+  }
+
+  .action-header > span {
+    font-size: 1.05rem;
+    font-weight: 700;
+  }
+
+  .range-label {
+    margin-bottom: 10px;
+  }
+
+  .range-label input {
+    padding: 10px 12px;
+  }
+
+  .range-hint {
+    font-size: 0.72rem;
+  }
+
+  .action-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .action-btn,
+  .primary-btn,
+  .secondary-btn,
+  .success-btn,
+  .ghost-btn {
+    padding: 10px 12px;
+  }
+
+  .action-btn {
+    font-size: 0.92rem;
+    line-height: 1.2;
   }
 
   .table-stage {
-    padding: 16px;
-    gap: 18px;
+    padding: 14px;
+    gap: 12px;
   }
 
   .board-panel {
     width: 100%;
-    padding: 18px 14px;
+    padding: 14px 12px;
   }
 
-  .seat-panel {
-    padding: 14px;
+  .merged-card-row {
+    grid-template-columns: 1fr;
+    gap: 12px;
   }
 
-  .seat-panel-header {
-    align-items: start;
-    flex-direction: column;
+  .merged-card-group-hero {
+    grid-template-columns: repeat(2, minmax(72px, 84px));
+    justify-content: center;
   }
 
-  .board-cards {
-    gap: 8px;
-    margin: 18px 0;
-  }
-
-  .board-cards .card-tile {
-    min-height: 0;
+  .merged-card-group-hero .card-tile.is-hero {
+    min-height: 108px;
+    min-width: 76px;
     padding: 10px 0 8px;
   }
 
-  .board-cards .card-rank {
-    font-size: clamp(1.2rem, 5vw, 1.6rem);
+  .merged-card-group-board {
+    gap: 6px;
   }
 
-  .board-cards .card-suit {
-    font-size: clamp(1rem, 4vw, 1.3rem);
+  .merged-card-separator {
+    display: none;
+  }
+
+  .seat-panel {
+    padding: 12px;
+  }
+
+  .seat-panel-header {
+    margin-bottom: 10px;
+  }
+
+  .seat-panel-header .muted-copy {
+    display: none;
+  }
+
+  .merged-card-group-board .card-tile {
+    min-height: 0;
+    padding: 8px 0 6px;
+  }
+
+  .merged-card-group-board .card-rank {
+    font-size: clamp(1rem, 4.2vw, 1.35rem);
+  }
+
+  .merged-card-group-board .card-suit {
+    font-size: clamp(0.9rem, 3.6vw, 1.15rem);
   }
 
   .seat-ring {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 12px;
+    gap: 8px;
   }
 
   .seat-node {
-    min-height: 84px;
-    padding: 8px;
+    min-height: 72px;
+    padding: 7px;
   }
 
   .seat-action-pill {
     font-size: 0.68rem;
-    padding: 2px 6px;
+    padding: 1px 6px;
   }
 
-  .hero-status {
+  .bet-focus-row {
+    align-items: start;
     flex-direction: column;
-    align-items: stretch;
+    margin-top: 10px;
   }
 
-  .hero-hole-cards {
-    margin-left: 0;
-    padding: 12px;
+  .bet-focus-list {
+    justify-content: start;
   }
 
-  .card-tile.is-hero {
-    min-height: 124px;
-    min-width: 88px;
-    padding: 14px 0 12px;
-  }
-
-  .card-tile.is-hero .card-rank {
-    font-size: clamp(1.8rem, 7vw, 2.2rem);
-  }
-
-  .card-tile.is-hero .card-suit {
-    font-size: clamp(1.4rem, 5vw, 1.8rem);
+  .status-bar {
+    display: none;
   }
 
   .chat-fab {

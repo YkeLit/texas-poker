@@ -14,7 +14,6 @@ import { createGuestSession, createRoom, getRoomSummary, joinRoom, reportClientE
 import { ActionPanel } from "./components/ActionPanel";
 import { ChatPanel } from "./components/ChatPanel";
 import { CommunityBoard } from "./components/CommunityBoard";
-import { PlayingCard } from "./components/PlayingCard";
 import { SeatRing } from "./components/SeatRing";
 
 const STORAGE_KEYS = {
@@ -39,7 +38,7 @@ export default function App() {
   const [roomCodeDraft, setRoomCodeDraft] = useState(() => localStorage.getItem(STORAGE_KEYS.roomCode) ?? "");
   const [config, setConfig] = useState<RoomConfig>(DEFAULT_CONFIG);
   const [snapshot, setSnapshot] = useState<RoomSnapshot | null>(null);
-  const [status, setStatus] = useState("输入昵称，创建一个好友房。");
+  const [status, setStatus] = useState("输入昵称，创建房间。");
   const [error, setError] = useState<string | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
   const [chatDrawerOpen, setChatDrawerOpen] = useState(false);
@@ -129,7 +128,7 @@ export default function App() {
     if (!snapshot) {
       return null;
     }
-    return `房号 ${snapshot.roomCode} · ${snapshot.config.smallBlind}/${snapshot.config.bigBlind} · ${snapshot.config.maxPlayers}人桌`;
+    return `房号 ${snapshot.roomCode} · ${snapshot.config.smallBlind}/${snapshot.config.bigBlind}`;
   }, [snapshot]);
 
   async function ensureSession() {
@@ -238,13 +237,35 @@ export default function App() {
     }
   }
 
+  async function handleExitRoom() {
+    const activeSnapshot = snapshot;
+    const socket = socketRef.current;
+
+    setError(null);
+    setChatDrawerOpen(false);
+
+    if (socket && activeSnapshot?.yourSeatIndex !== null && activeSnapshot?.yourSeatIndex !== undefined && activeSnapshot.stage === "waiting") {
+      try {
+        await emitWithAck(socket, "seat.leave", {});
+      } catch {
+        // Best effort only. Leaving the room view should still work even if the seat cannot be released.
+      }
+    }
+
+    socket?.disconnect();
+    socketRef.current = null;
+    localStorage.removeItem(STORAGE_KEYS.roomCode);
+    setRoomCodeDraft("");
+    setSnapshot(null);
+    setStatus("已退出房间。");
+  }
+
   function renderLobby() {
     return (
       <main className="landing-shell">
         <section className="hero-card">
           <div className="hero-copy">
-            <span className="eyebrow">Texas Hold'em MVP</span>
-            <h1>好友房德州扑克</h1>
+            <h1>德州扑克</h1>
             <p>
               先输入昵称，然后创建房间或输入房号加入。服务端负责发牌、比牌和筹码结算，前端只负责操作和展示。
             </p>
@@ -268,8 +289,7 @@ export default function App() {
 
         <section className="lobby-grid">
           <article className="lobby-card">
-            <h2>创建好友房</h2>
-            <p className="muted-copy">固定 {MAX_TABLE_PLAYERS} 人桌，进入房间后再选座位，所有已入座玩家准备后即可开局。</p>
+            <h2>创建房间</h2>
             <label>
               起始筹码
               <select
@@ -350,8 +370,12 @@ export default function App() {
       <main className="table-shell">
         <header className="top-bar">
           <div>
-            <span className="eyebrow">好友房</span>
             <h1>{roomSummary}</h1>
+          </div>
+          <div className="top-actions">
+            <button type="button" className="ghost-btn" onClick={handleExitRoom}>
+              退出房间
+            </button>
           </div>
         </header>
 
@@ -366,20 +390,15 @@ export default function App() {
             />
 
             <section className="table-stage">
-              <CommunityBoard board={snapshot.board} pots={snapshot.pots} stage={snapshot.stage} handNumber={snapshot.handNumber} />
-              <div className="hero-status">
-                <span className="hero-status-copy">{status}</span>
-                {snapshot.yourHoleCards && snapshot.yourHoleCards.length > 0 && (
-                  <div className="hero-hole-cards">
-                    <span className="hero-hole-label">你的底牌</span>
-                    <div className="hero-hole-card-list" aria-label="你的底牌">
-                      {snapshot.yourHoleCards.map((card, index) => (
-                        <PlayingCard key={`${card.rank}-${card.suit}-${index}`} card={card} compact variant="hero" />
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
+              <CommunityBoard
+                board={snapshot.board}
+                yourHoleCards={snapshot.yourHoleCards}
+                pots={snapshot.pots}
+                seats={snapshot.seats}
+                yourSeatIndex={snapshot.yourSeatIndex}
+                stage={snapshot.stage}
+                handNumber={snapshot.handNumber}
+              />
             </section>
 
             <section className="seat-panel">
