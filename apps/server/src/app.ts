@@ -231,6 +231,10 @@ export async function buildApp(options: BuildAppOptions = {}) {
       await runSocketMutation(socket, ack, async () => roomService.startHand(requireRoomCode(socket), requireSessionId(socket)));
     });
 
+    socket.on("player.rebuy", async (_payload, ack) => {
+      await runSocketMutation(socket, ack, async () => roomService.rebuyPlayer(requireRoomCode(socket), requireSessionId(socket)));
+    });
+
     socket.on("action.submit", async (payload, ack) => {
       const parsed = playerActionSchema.safeParse(payload);
       if (!parsed.success) {

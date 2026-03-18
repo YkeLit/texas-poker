@@ -56,7 +56,6 @@ button {
 .lobby-card,
 .action-panel,
 .chat-panel,
-.board-panel,
 .seat-panel {
   background: linear-gradient(180deg, rgba(30, 41, 59, 0.96), rgba(15, 23, 42, 0.94));
   border: 1px solid var(--border);
@@ -125,6 +124,12 @@ select {
   display: grid;
   grid-template-columns: repeat(2, minmax(280px, 1fr));
   gap: 24px;
+}
+
+.blind-input-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
 }
 
 .primary-btn,
@@ -241,10 +246,13 @@ select {
 }
 
 .board-panel {
-  width: min(100%, 900px);
-  padding: 28px;
-  margin: 0 auto;
+  width: 100%;
+  padding: 0;
+  margin: 0;
   text-align: center;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
 }
 
 .board-header,
@@ -498,6 +506,11 @@ select {
   color: #fecdd3;
   font-size: 0.84rem;
   font-weight: 700;
+  min-width: 80px;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .action-panel,
@@ -549,6 +562,19 @@ select {
 
 .result-panel ul {
   padding-left: 18px;
+}
+
+.rebuy-panel {
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  background: rgba(51, 65, 85, 0.32);
+  border: 1px solid rgba(148, 163, 184, 0.14);
+}
+
+.rebuy-panel h3 {
+  margin: 0;
 }
 
 .chat-feed {
@@ -642,12 +668,16 @@ select {
 
 @media (max-width: 760px) {
   .app-shell {
-    padding: 14px;
-    padding-bottom: 96px;
+    padding: 12px;
+    padding-bottom: 90px;
   }
 
   .hero-card,
   .lobby-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .blind-input-row {
     grid-template-columns: 1fr;
   }
 
@@ -722,7 +752,7 @@ select {
 
   .board-panel {
     width: 100%;
-    padding: 14px 12px;
+    padding: 0;
   }
 
   .merged-card-row {
@@ -791,13 +821,21 @@ select {
   }
 
   .bet-focus-row {
-    align-items: start;
+    align-items: center;
     flex-direction: column;
-    margin-top: 10px;
+    margin-top: 8px;
   }
 
   .bet-focus-list {
-    justify-content: start;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .bet-focus-pill {
+    max-width: calc(50% - 6px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .status-bar {

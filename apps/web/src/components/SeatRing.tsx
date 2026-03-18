@@ -56,7 +56,7 @@ function SeatNode(props: {
           </span>
           <span className="seat-stack">筹码 {player.stack}</span>
           <span className="seat-meta">
-            {labelForPlayer(player.status, player.ready, player.presence)}
+            {labelForPlayer(player.status, player.ready, player.presence, player.rebuyRemainingHands)}
             {isActing && countdown !== null ? ` · ${countdown}s` : ""}
           </span>
           <span className="seat-bet">{player.currentBet > 0 ? `当前下注 ${player.currentBet}` : "待命"}</span>
@@ -71,9 +71,12 @@ function SeatNode(props: {
   );
 }
 
-function labelForPlayer(status: string, ready: boolean, presence: string) {
+function labelForPlayer(status: string, ready: boolean, presence: string, rebuyRemainingHands: number) {
   if (presence === "disconnected") {
     return "离线";
+  }
+  if (status === "out") {
+    return rebuyRemainingHands > 0 ? `待补充 ${rebuyRemainingHands}局` : "可补充筹码";
   }
   if (!ready && status === "waiting") {
     return "未准备";

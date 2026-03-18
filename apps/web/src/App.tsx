@@ -1,11 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { io, type Socket } from "socket.io-client";
 import {
-  ACTION_TIME_PRESETS,
-  BLIND_PRESETS,
   type ChatMessage,
   MAX_TABLE_PLAYERS,
-  STARTING_STACK_PRESETS,
   type GuestSession,
   type RoomConfig,
   type RoomSnapshot,
@@ -23,10 +20,11 @@ const STORAGE_KEYS = {
 
 const DEFAULT_CONFIG: RoomConfig = {
   maxPlayers: MAX_TABLE_PLAYERS,
-  startingStack: STARTING_STACK_PRESETS[1],
-  smallBlind: BLIND_PRESETS[0].smallBlind,
-  bigBlind: BLIND_PRESETS[0].bigBlind,
-  actionTimeSeconds: ACTION_TIME_PRESETS[0],
+  startingStack: 2000,
+  smallBlind: 10,
+  bigBlind: 20,
+  actionTimeSeconds: 20,
+  rebuyCooldownHands: 2,
 };
 
 export default function App() {
@@ -292,47 +290,51 @@ export default function App() {
             <h2>创建房间</h2>
             <label>
               起始筹码
-              <select
+              <input
+                type="number"
+                min={100}
+                step={100}
                 value={config.startingStack}
                 onChange={(event) => setConfig((current) => ({ ...current, startingStack: Number(event.target.value) }))}
-              >
-                {STARTING_STACK_PRESETS.map((value) => (
-                  <option key={value} value={value}>
-                    {value}
-                  </option>
-                ))}
-              </select>
+              />
             </label>
-            <label>
-              盲注
-              <select
-                value={`${config.smallBlind}/${config.bigBlind}`}
-                onChange={(event) => {
-                  const [smallBlindValue, bigBlindValue] = event.target.value.split("/");
-                  const smallBlind = Number(smallBlindValue);
-                  const bigBlind = Number(bigBlindValue);
-                  setConfig((current) => ({ ...current, smallBlind, bigBlind }));
-                }}
-              >
-                {BLIND_PRESETS.map((preset) => (
-                  <option key={`${preset.smallBlind}/${preset.bigBlind}`} value={`${preset.smallBlind}/${preset.bigBlind}`}>
-                    {preset.smallBlind}/{preset.bigBlind}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <div className="blind-input-row">
+              <label>
+                小盲
+                <input
+                  type="number"
+                  min={1}
+                  value={config.smallBlind}
+                  onChange={(event) => setConfig((current) => ({ ...current, smallBlind: Number(event.target.value) }))}
+                />
+              </label>
+              <label>
+                大盲
+                <input
+                  type="number"
+                  min={Math.max(1, config.smallBlind)}
+                  value={config.bigBlind}
+                  onChange={(event) => setConfig((current) => ({ ...current, bigBlind: Number(event.target.value) }))}
+                />
+              </label>
+            </div>
             <label>
               行动时限
-              <select
+              <input
+                type="number"
+                min={5}
                 value={config.actionTimeSeconds}
                 onChange={(event) => setConfig((current) => ({ ...current, actionTimeSeconds: Number(event.target.value) }))}
-              >
-                {ACTION_TIME_PRESETS.map((value) => (
-                  <option key={value} value={value}>
-                    {value} 秒
-                  </option>
-                ))}
-              </select>
+              />
+            </label>
+            <label>
+              补充筹码等待局数
+              <input
+                type="number"
+                min={0}
+                value={config.rebuyCooldownHands}
+                onChange={(event) => setConfig((current) => ({ ...current, rebuyCooldownHands: Number(event.target.value) }))}
+              />
             </label>
             <button id="create-room-btn" type="button" className="primary-btn" disabled={isConnecting} onClick={handleCreateRoom}>
               创建房间
@@ -383,7 +385,7 @@ export default function App() {
           <div className="table-main">
             <ActionPanel
               snapshot={snapshot}
-              onAction={(action) => handleSeatAction("action.submit", action)}
+              onAction={(action) => handleSeatAction(action.type === "rebuy" ? "player.rebuy" : "action.submit", action.type === "rebuy" ? {} : action)}
               onToggleReady={(ready) => handleSeatAction(ready ? "player.ready" : "player.unready")}
               onStartHand={() => handleSeatAction("hand.start")}
               onLeaveSeat={() => handleSeatAction("seat.leave")}

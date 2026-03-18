@@ -3,7 +3,6 @@ import {
   CHAT_THROTTLE_MS,
   EMOJI_THROTTLE_MS,
   MAX_TABLE_PLAYERS,
-  NEXT_HAND_DELAY_MS,
   type ChatMessage,
   type CreateRoomResponse,
   type GuestSession,
@@ -15,15 +14,16 @@ import {
   type RoomSnapshot,
   type RoomSummary,
 } from "@texas-poker/shared";
-import { getPlayerLabel, isBlindPreset } from "@texas-poker/shared";
+import { getPlayerLabel } from "@texas-poker/shared";
 import {
   applyPlayerAction,
+  canRebuyChips,
   canStartHand,
   createPokerEngine,
   getAvailableActions,
-  getNextHandStartsAt,
   getSeatBySession,
   isHandActive,
+  rebuyChips,
   removePlayerFromSeat,
   seatPlayer,
   setPlayerPresence,
@@ -53,7 +53,6 @@ interface RoomRuntime {
   createdAt: string;
   seatOrder: string[];
   turnTimer?: ReturnType<typeof setTimeout>;
-  nextHandTimer?: ReturnType<typeof setTimeout>;
 }
 
 export class RoomService {
@@ -88,9 +87,11 @@ export class RoomService {
       ...config,
       maxPlayers: MAX_TABLE_PLAYERS,
     };
-
-    if (!isBlindPreset(normalizedConfig)) {
-      throw new Error("Unsupported blind structure");
+    if (normalizedConfig.bigBlind < normalizedConfig.smallBlind) {
+      throw new Error("Big blind must be greater than or equal to small blind");
+    }
+    if (normalizedConfig.rebuyCooldownHands < 0) {
+      throw new Error("Rebuy cooldown hands must be zero or greater");
     }
 
     const roomCode = this.generateRoomCode();
@@ -164,7 +165,7 @@ export class RoomService {
       seats: room.engine.seats.map((player, seatIndex) => ({
         seatIndex,
         occupied: Boolean(player),
-        player: player ? this.toPublicPlayer(player) : undefined,
+        player: player ? this.toPublicPlayer(room.engine, player) : undefined,
       })),
       yourSessionId: viewerSessionId,
       yourSeatIndex: viewerSeatIndex,
@@ -265,6 +266,15 @@ export class RoomService {
     return this.buildSnapshot(roomCode, sessionId);
   }
 
+  async rebuyPlayer(roomCode: string, sessionId: string): Promise<RoomSnapshot> {
+    const room = await this.ensureRoomLoaded(roomCode);
+    const seatIndex = this.requireSeat(room.engine, sessionId);
+    rebuyChips(room.engine, seatIndex);
+    room.engine.seats[seatIndex]!.lastAction = makeRecentAction("已补充筹码", "safe");
+    await this.afterMutation(roomCode);
+    return this.buildSnapshot(roomCode, sessionId);
+  }
+
   async submitAction(roomCode: string, sessionId: string, action: PlayerActionCommand): Promise<RoomSnapshot> {
     const room = await this.ensureRoomLoaded(roomCode);
     const seatIndex = this.requireSeat(room.engine, sessionId);
@@ -288,11 +298,8 @@ export class RoomService {
     if (room.engine.stage === "showdown" && beforeStage !== "showdown" && room.engine.lastResult) {
       await this.persistence.saveHandResult(roomCode, room.engine.lastResult);
       await this.emitEvent(roomCode, "hand.result", room.engine.lastResult);
-      this.scheduleNextHand(roomCode);
-    } else {
-      this.scheduleTurn(roomCode);
     }
-
+    this.scheduleTurn(roomCode);
     await this.afterMutation(roomCode);
     return this.buildSnapshot(roomCode, sessionId);
   }
@@ -347,9 +354,6 @@ export class RoomService {
     for (const room of this.rooms.values()) {
       if (room.turnTimer) {
         clearTimeout(room.turnTimer);
-      }
-      if (room.nextHandTimer) {
-        clearTimeout(room.nextHandTimer);
       }
     }
     await this.cache.close();
@@ -432,30 +436,6 @@ export class RoomService {
     room.turnTimer = setTimeout(() => {
       void this.handleTurnTimeout(roomCode);
     }, room.engine.config.actionTimeSeconds * 1_000);
-  }
-
-  private scheduleNextHand(roomCode: string): void {
-    const room = this.requireRoom(roomCode);
-    if (room.nextHandTimer) {
-      clearTimeout(room.nextHandTimer);
-      room.nextHandTimer = undefined;
-    }
-
-    if (!canStartHand(room.engine)) {
-      return;
-    }
-
-    const scheduledFor = getNextHandStartsAt(new Date());
-    void this.emitEvent(roomCode, "turn.started", { actingSeatIndex: null, deadlineAt: scheduledFor });
-    room.nextHandTimer = setTimeout(() => {
-      if (!canStartHand(room.engine)) {
-        return;
-      }
-      clearRecentActions(room.engine);
-      startHand(room.engine, new Date());
-      void this.emitEvent(roomCode, "action.applied", { type: "hand.auto_start" });
-      void this.afterMutation(roomCode);
-    }, NEXT_HAND_DELAY_MS);
   }
 
   private async handleTurnTimeout(roomCode: string): Promise<void> {
@@ -571,19 +551,6 @@ export class RoomService {
       return;
     }
 
-    if (room.engine.stage === "showdown" && room.engine.lastAutoAdvanceAt && canStartHand(room.engine)) {
-      const nextHandStartsAt = new Date(new Date(room.engine.lastAutoAdvanceAt).getTime() + NEXT_HAND_DELAY_MS);
-      const timeoutMs = Math.max(0, nextHandStartsAt.getTime() - Date.now());
-      room.nextHandTimer = setTimeout(() => {
-        if (!canStartHand(room.engine)) {
-          return;
-        }
-        clearRecentActions(room.engine);
-        startHand(room.engine, new Date());
-        void this.emitEvent(roomCode, "action.applied", { type: "hand.auto_start" });
-        void this.afterMutation(roomCode);
-      }, timeoutMs);
-    }
   }
 
   private toCachedRoomState(room: RoomRuntime): CachedRoomState {
@@ -621,7 +588,7 @@ export class RoomService {
     }
   }
 
-  private toPublicPlayer(player: EnginePlayer) {
+  private toPublicPlayer(engine: PokerEngineState, player: EnginePlayer) {
     return {
       sessionId: player.sessionId,
       nickname: player.nickname,
@@ -638,6 +605,8 @@ export class RoomService {
       revealedCards: player.revealedCards,
       missedHands: player.missedHands,
       lastAction: player.lastAction,
+      rebuyRemainingHands: player.rebuyHandsRemaining,
+      canRebuy: canRebuyChips(engine, player.seatIndex),
     };
   }
 

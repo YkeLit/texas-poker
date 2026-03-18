@@ -77,6 +77,7 @@ export class PrismaPersistenceAdapter implements PersistenceAdapter {
         smallBlind: config.smallBlind,
         bigBlind: config.bigBlind,
         actionTimeSeconds: config.actionTimeSeconds,
+        rebuyCooldownHands: config.rebuyCooldownHands,
       },
       update: {
         hostSessionId,
@@ -85,6 +86,7 @@ export class PrismaPersistenceAdapter implements PersistenceAdapter {
         smallBlind: config.smallBlind,
         bigBlind: config.bigBlind,
         actionTimeSeconds: config.actionTimeSeconds,
+        rebuyCooldownHands: config.rebuyCooldownHands,
       },
     });
   }
@@ -105,6 +107,7 @@ export class PrismaPersistenceAdapter implements PersistenceAdapter {
         smallBlind: record.smallBlind,
         bigBlind: record.bigBlind,
         actionTimeSeconds: record.actionTimeSeconds,
+        rebuyCooldownHands: record.rebuyCooldownHands,
       },
       createdAt: record.createdAt.toISOString(),
     };
