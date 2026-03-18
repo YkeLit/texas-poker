@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ChatMessage, GuestSession, HandResult, RoomConfig } from "@texas-poker/shared";
 import { buildApp } from "../src/app";
+import { normalizeClientOrigins, readConfig } from "../src/config";
 import { MemoryCacheAdapter } from "../src/repositories/cache";
 import type { PersistedRoomRecord, PersistenceAdapter } from "../src/repositories/persistence";
 
@@ -107,6 +108,38 @@ describe("server integration", () => {
     expect(room.roomCode).toHaveLength(6);
     expect(joinPayload.wsToken).toBeTypeOf("string");
     expect(joinPayload.snapshot.roomCode).toBe(room.roomCode);
+  });
+
+  it("parses multiple client origins and returns CORS headers for each allowed origin", async () => {
+    expect(readConfig({
+      CLIENT_ORIGIN: "http://127.0.0.1:4173, https://poker.example.com",
+    }).clientOrigin).toEqual(["http://127.0.0.1:4173", "https://poker.example.com"]);
+    expect(normalizeClientOrigins(["http://127.0.0.1:4173", "https://poker.example.com"])).toEqual([
+      "http://127.0.0.1:4173",
+      "https://poker.example.com",
+    ]);
+
+    const corsInstance = await buildApp({
+      config: {
+        ...TEST_CONFIG,
+        clientOrigin: ["http://127.0.0.1:4173", "https://poker.example.com"],
+      },
+    });
+
+    try {
+      const response = await corsInstance.app.inject({
+        method: "OPTIONS",
+        url: "/healthz",
+        headers: {
+          origin: "https://poker.example.com",
+          "access-control-request-method": "GET",
+        },
+      });
+
+      expect(response.headers["access-control-allow-origin"]).toBe("https://poker.example.com");
+    } finally {
+      await corsInstance.close();
+    }
   });
 
   it("rejects out-of-turn actions and prevents a third player from taking an occupied seat", async () => {

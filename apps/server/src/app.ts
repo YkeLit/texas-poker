@@ -11,7 +11,7 @@ import {
   reconnectSchema,
   seatActionSchema,
 } from "@texas-poker/shared";
-import { readConfig, type AppConfig } from "./config";
+import { normalizeClientOrigins, readConfig, type AppConfig } from "./config";
 import { createPrismaClient } from "./db/prisma";
 import { createRedisClient } from "./db/redis";
 import { log } from "./lib/logger";
@@ -29,6 +29,8 @@ interface BuildAppOptions {
 
 export async function buildApp(options: BuildAppOptions = {}) {
   const config = options.config ?? readConfig();
+  const clientOrigins = normalizeClientOrigins(config.clientOrigin);
+  const corsOrigin = clientOrigins.length === 1 ? clientOrigins[0]! : clientOrigins;
   const prisma = await createPrismaClient(config.databaseUrl);
   const redis = createRedisClient(config.redisUrl);
   const persistence = options.persistence ?? (prisma ? new PrismaPersistenceAdapter(prisma) : new NoopPersistenceAdapter());
@@ -51,13 +53,13 @@ export async function buildApp(options: BuildAppOptions = {}) {
   });
 
   await app.register(cors, {
-    origin: config.clientOrigin,
+    origin: corsOrigin,
     credentials: true,
   });
 
   const io = new SocketIOServer(app.server, {
     cors: {
-      origin: config.clientOrigin,
+      origin: corsOrigin,
       credentials: true,
     },
   });

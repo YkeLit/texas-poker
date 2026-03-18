@@ -62,6 +62,12 @@ docker compose up -d
 
 服务端容器会在启动时自动执行 `prisma db push --skip-generate`，因此首次连到一块全新的 PostgreSQL 卷时也会自动建表。
 
+`CLIENT_ORIGIN` 支持多个来源，使用逗号分隔即可，例如：
+
+```bash
+export CLIENT_ORIGIN=http://127.0.0.1:5173,https://poker.example.com
+```
+
 前端容器里的 `VITE_SERVER_ORIGIN` 只用于 Vite 代理 `/api` 和 `/healthz`；浏览器侧 websocket 默认会连到“当前页面所在主机”的 `3001` 端口。如果你的部署把实时服务暴露在别的公网地址，可以额外设置：
 
 ```bash
