@@ -150,7 +150,7 @@ export default function App() {
 
     try {
       const joinResponse = await joinRoom(roomCode, activeSession.sessionId);
-      const socket = io(import.meta.env.VITE_SERVER_ORIGIN ?? window.location.origin.replace(":5173", ":3001"), {
+      const socket = io(resolveSocketOrigin(window.location.origin, import.meta.env.VITE_SOCKET_ORIGIN), {
         autoConnect: true,
         transports: ["websocket"],
       });
@@ -413,6 +413,16 @@ async function emitWithAck(socket: Socket, event: string, payload: unknown) {
     throw new Error(response.error ?? `Event ${event} failed`);
   }
   return response.snapshot;
+}
+
+export function resolveSocketOrigin(browserOrigin: string, explicitOrigin?: string) {
+  if (explicitOrigin) {
+    return explicitOrigin;
+  }
+
+  const url = new URL(browserOrigin);
+  url.port = "3001";
+  return url.origin;
 }
 
 function cardToText(card: { rank: number; suit: string }) {

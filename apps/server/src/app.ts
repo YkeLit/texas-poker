@@ -111,7 +111,7 @@ export async function buildApp(options: BuildAppOptions = {}) {
   app.get("/api/v1/rooms/:roomCode", async (request, reply) => {
     const roomCode = (request.params as { roomCode: string }).roomCode;
     try {
-      return reply.send(roomService.getRoomSummary(roomCode));
+      return reply.send(await roomService.getRoomSummary(roomCode));
     } catch (error) {
       return reply.code(404).send({ error: toErrorMessage(error) });
     }

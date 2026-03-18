@@ -75,6 +75,18 @@ describe("hand evaluator", () => {
 });
 
 describe("poker engine", () => {
+  it("rejects seat indexes outside the table size", () => {
+    const state = createPokerEngine({ ...config, maxPlayers: 2 });
+
+    expect(() =>
+      seatPlayer(state, {
+        sessionId: "session-out-of-range",
+        nickname: "越界玩家",
+        seatIndex: 8,
+      })
+    ).toThrow("Seat index is out of range");
+  });
+
   it("uses dealer as the small blind in heads-up play", () => {
     const state = setupTable(2);
     expect(state.dealerSeatIndex).toBe(0);

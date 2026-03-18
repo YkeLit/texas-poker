@@ -38,6 +38,7 @@ services:
     pull_policy: always
     environment:
       VITE_SERVER_ORIGIN: ${VITE_SERVER_ORIGIN:-http://server:3001}
+      VITE_SOCKET_ORIGIN: ${VITE_SOCKET_ORIGIN:-}
     depends_on:
       - server
     ports:

@@ -85,6 +85,10 @@ export function seatPlayer(
   state: PokerEngineState,
   input: { sessionId: string; nickname: string; seatIndex: number; isHost?: boolean },
 ): EnginePlayer {
+  if (input.seatIndex < 0 || input.seatIndex >= state.seats.length) {
+    throw new Error("Seat index is out of range");
+  }
+
   const existing = state.seats[input.seatIndex];
   if (existing && existing.sessionId !== input.sessionId) {
     throw new Error("Seat is already occupied");

@@ -60,10 +60,19 @@ export TEXAS_POKER_WEB_IMAGE=ghcr.io/ykelit/texas-poker-web:main
 docker compose up -d
 ```
 
+服务端容器会在启动时自动执行 `prisma db push --skip-generate`，因此首次连到一块全新的 PostgreSQL 卷时也会自动建表。
+
+前端容器里的 `VITE_SERVER_ORIGIN` 只用于 Vite 代理 `/api` 和 `/healthz`；浏览器侧 websocket 默认会连到“当前页面所在主机”的 `3001` 端口。如果你的部署把实时服务暴露在别的公网地址，可以额外设置：
+
+```bash
+export VITE_SOCKET_ORIGIN=https://poker.example.com
+docker compose up -d
+```
+
 ### PostgreSQL 和 Redis 是做什么的
 
 - `PostgreSQL`：持久化游客会话、房间元数据、聊天记录和手牌历史。没有它时，服务重启后这些数据不会保留。
-- `Redis`：保存在线房间快照、重连 token、座位锁这类实时短期状态，也为后续多实例扩展预留空间。
+- `Redis`：保存在线房间运行态、公开快照、重连 token、座位锁这类实时短期状态，也为后续多实例扩展预留空间。
 
 如果你只想跑一个最轻量的本地试玩环境，当前服务端其实也能退回到内存模式；但在正式部署或需要断线恢复、历史留存时，建议保留这两个服务。
 

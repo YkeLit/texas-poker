@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { RoomSnapshot } from "@texas-poker/shared";
+import { resolveSocketOrigin } from "./App";
 import { ActionPanel } from "./components/ActionPanel";
 import { CommunityBoard } from "./components/CommunityBoard";
 
@@ -82,6 +83,11 @@ const snapshot: RoomSnapshot = {
 };
 
 describe("web components", () => {
+  it("resolves the socket origin from the browser host unless explicitly overridden", () => {
+    expect(resolveSocketOrigin("http://127.0.0.1:5173")).toBe("http://127.0.0.1:3001");
+    expect(resolveSocketOrigin("http://127.0.0.1:5173", "https://poker.example.com")).toBe("https://poker.example.com");
+  });
+
   it("renders board and pot information", () => {
     const markup = renderToStaticMarkup(<CommunityBoard board={snapshot.board} pots={snapshot.pots} stage={snapshot.stage} handNumber={snapshot.handNumber} />);
     expect(markup).toContain("底池 30");

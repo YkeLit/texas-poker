@@ -14,4 +14,4 @@ RUN pnpm --filter @texas-poker/server prisma:generate
 RUN pnpm --filter @texas-poker/server build
 
 EXPOSE 3001
-CMD ["pnpm", "--filter", "@texas-poker/server", "dev"]
+CMD ["pnpm", "--filter", "@texas-poker/server", "start:prod"]

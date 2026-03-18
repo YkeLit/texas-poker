@@ -29,7 +29,7 @@ import {
   type EnginePlayer,
   type PokerEngineState,
 } from "@texas-poker/poker-engine";
-import type { CacheAdapter } from "../repositories/cache";
+import type { CacheAdapter, CachedRoomState } from "../repositories/cache";
 import type { PersistenceAdapter } from "../repositories/persistence";
 import type { MetricsTracker } from "../lib/metrics";
 
@@ -80,7 +80,7 @@ export class RoomService {
   }
 
   async createRoom(sessionId: string, config: RoomConfig): Promise<CreateRoomResponse> {
-    const session = this.requireSession(sessionId);
+    const session = await this.ensureSessionLoaded(sessionId);
     if (!isBlindPreset(config)) {
       throw new Error("Unsupported blind structure");
     }
@@ -106,8 +106,8 @@ export class RoomService {
     };
   }
 
-  getRoomSummary(roomCode: string): RoomSummary {
-    const room = this.requireRoom(roomCode);
+  async getRoomSummary(roomCode: string): Promise<RoomSummary> {
+    const room = await this.ensureRoomLoaded(roomCode);
     const connectedPlayers = room.engine.seats.filter((player) => player?.presence === "connected").length;
     const seatedPlayers = room.engine.seats.filter(Boolean).length;
     return {
@@ -121,8 +121,8 @@ export class RoomService {
   }
 
   async joinRoom(roomCode: string, sessionId: string): Promise<JoinRoomResponse> {
-    const room = this.requireRoom(roomCode);
-    const session = this.requireSession(sessionId);
+    await this.ensureRoomLoaded(roomCode);
+    const session = await this.ensureSessionLoaded(sessionId);
     session.currentRoomCode = roomCode;
     await this.cache.saveResumeToken(sessionId, roomCode, session.resumeToken);
     return {
@@ -168,14 +168,15 @@ export class RoomService {
   }
 
   async handleRoomJoin(roomCode: string, sessionId: string): Promise<RoomSnapshot> {
-    const session = this.requireSession(sessionId);
+    await this.ensureRoomLoaded(roomCode);
+    const session = await this.ensureSessionLoaded(sessionId);
     session.currentRoomCode = roomCode;
     return this.buildSnapshot(roomCode, sessionId);
   }
 
   async resumeSession(roomCode: string, sessionId: string, resumeToken: string): Promise<RoomSnapshot> {
-    const session = this.requireSession(sessionId);
-    const room = this.requireRoom(roomCode);
+    const session = await this.ensureSessionLoaded(sessionId);
+    const room = await this.ensureRoomLoaded(roomCode);
     const tokenValid =
       (await this.cache.verifyResumeToken(sessionId, roomCode, resumeToken)) || session.resumeToken === resumeToken;
     if (!tokenValid) {
@@ -194,12 +195,17 @@ export class RoomService {
   }
 
   async takeSeat(roomCode: string, sessionId: string, seatIndex: number): Promise<RoomSnapshot> {
-    const room = this.requireRoom(roomCode);
-    const session = this.requireSession(sessionId);
+    const room = await this.ensureRoomLoaded(roomCode);
+    const session = await this.ensureSessionLoaded(sessionId);
     const currentSeatIndex = getSeatBySession(room.engine, sessionId);
     if (currentSeatIndex !== null && currentSeatIndex !== seatIndex) {
       throw new Error("Player is already seated");
     }
+
+    if (!room.hostSessionId) {
+      room.hostSessionId = sessionId;
+    }
+    session.currentRoomCode = roomCode;
 
     const player = seatPlayer(room.engine, {
       sessionId,
@@ -215,7 +221,7 @@ export class RoomService {
   }
 
   async leaveSeat(roomCode: string, sessionId: string): Promise<RoomSnapshot> {
-    const room = this.requireRoom(roomCode);
+    const room = await this.ensureRoomLoaded(roomCode);
     const seatIndex = this.requireSeat(room.engine, sessionId);
     removePlayerFromSeat(room.engine, seatIndex);
     room.seatOrder = room.seatOrder.filter((value) => value !== sessionId);
@@ -228,7 +234,7 @@ export class RoomService {
   }
 
   async toggleReady(roomCode: string, sessionId: string, ready: boolean): Promise<RoomSnapshot> {
-    const room = this.requireRoom(roomCode);
+    const room = await this.ensureRoomLoaded(roomCode);
     const seatIndex = this.requireSeat(room.engine, sessionId);
     setPlayerReady(room.engine, seatIndex, ready);
     await this.afterMutation(roomCode);
@@ -236,7 +242,7 @@ export class RoomService {
   }
 
   async startHand(roomCode: string, sessionId: string): Promise<RoomSnapshot> {
-    const room = this.requireRoom(roomCode);
+    const room = await this.ensureRoomLoaded(roomCode);
     if (room.hostSessionId !== sessionId) {
       throw new Error("Only the host can start the first hand");
     }
@@ -249,7 +255,7 @@ export class RoomService {
   }
 
   async submitAction(roomCode: string, sessionId: string, action: PlayerActionCommand): Promise<RoomSnapshot> {
-    const room = this.requireRoom(roomCode);
+    const room = await this.ensureRoomLoaded(roomCode);
     const seatIndex = this.requireSeat(room.engine, sessionId);
     const beforeStage = room.engine.stage;
 
@@ -341,7 +347,7 @@ export class RoomService {
     type: "chat" | "emoji",
     content: string,
   ): Promise<RoomSnapshot> {
-    const room = this.requireRoom(roomCode);
+    const room = await this.ensureRoomLoaded(roomCode);
     const seatIndex = this.requireSeat(room.engine, sessionId);
     const player = room.engine.seats[seatIndex]!;
     const throttleKey = `${sessionId}:${type}`;
@@ -376,7 +382,9 @@ export class RoomService {
   }
 
   private async syncCache(roomCode: string): Promise<void> {
+    const room = this.requireRoom(roomCode);
     await this.cache.saveRoomSnapshot(roomCode, this.buildSnapshot(roomCode));
+    await this.cache.saveRoomState(roomCode, this.toCachedRoomState(room));
   }
 
   private async requestSnapshot(roomCode: string): Promise<void> {
@@ -462,6 +470,7 @@ export class RoomService {
       room.seatOrder.find((sessionId) => getSeatBySession(room.engine, sessionId) !== null);
 
     if (!nextSessionId) {
+      room.hostSessionId = "";
       return;
     }
 
@@ -480,6 +489,106 @@ export class RoomService {
         createdAt: new Date().toISOString(),
       } satisfies ChatMessage);
     }
+  }
+
+  private async ensureSessionLoaded(sessionId: string): Promise<GuestSessionRecord> {
+    const existing = this.sessions.get(sessionId);
+    if (existing) {
+      return existing;
+    }
+
+    const persisted = await this.persistence.getGuestSession(sessionId);
+    if (!persisted) {
+      throw new Error("Session not found");
+    }
+
+    const session: GuestSessionRecord = { ...persisted };
+    this.sessions.set(session.sessionId, session);
+    return session;
+  }
+
+  private async ensureRoomLoaded(roomCode: string): Promise<RoomRuntime> {
+    const existing = this.rooms.get(roomCode);
+    if (existing) {
+      return existing;
+    }
+
+    const cachedRoom = await this.cache.getRoomState(roomCode);
+    if (cachedRoom) {
+      const room = this.fromCachedRoomState(cachedRoom);
+      this.rooms.set(roomCode, room);
+      this.metrics.setActiveRooms(this.rooms.size);
+      this.restoreRoomTimers(roomCode);
+      return room;
+    }
+
+    const persistedRoom = await this.persistence.getRoom(roomCode);
+    if (!persistedRoom) {
+      throw new Error("Room not found");
+    }
+
+    const room: RoomRuntime = {
+      roomCode,
+      hostSessionId: "",
+      engine: createPokerEngine(persistedRoom.config),
+      messages: [],
+      createdAt: persistedRoom.createdAt,
+      seatOrder: [],
+    };
+    this.rooms.set(roomCode, room);
+    this.metrics.setActiveRooms(this.rooms.size);
+    await this.syncCache(roomCode);
+    return room;
+  }
+
+  private restoreRoomTimers(roomCode: string): void {
+    const room = this.requireRoom(roomCode);
+    if (isHandActive(room.engine.stage) && room.engine.actingSeatIndex !== null) {
+      if (!room.engine.actionDeadlineAt) {
+        this.scheduleTurn(roomCode);
+        return;
+      }
+      const timeoutMs = Math.max(0, new Date(room.engine.actionDeadlineAt).getTime() - Date.now());
+      room.turnTimer = setTimeout(() => {
+        void this.handleTurnTimeout(roomCode);
+      }, timeoutMs);
+      return;
+    }
+
+    if (room.engine.stage === "showdown" && room.engine.lastAutoAdvanceAt && canStartHand(room.engine)) {
+      const nextHandStartsAt = new Date(new Date(room.engine.lastAutoAdvanceAt).getTime() + NEXT_HAND_DELAY_MS);
+      const timeoutMs = Math.max(0, nextHandStartsAt.getTime() - Date.now());
+      room.nextHandTimer = setTimeout(() => {
+        if (!canStartHand(room.engine)) {
+          return;
+        }
+        startHand(room.engine, new Date());
+        void this.emitEvent(roomCode, "action.applied", { type: "hand.auto_start" });
+        void this.afterMutation(roomCode);
+      }, timeoutMs);
+    }
+  }
+
+  private toCachedRoomState(room: RoomRuntime): CachedRoomState {
+    return {
+      roomCode: room.roomCode,
+      hostSessionId: room.hostSessionId,
+      engine: room.engine,
+      messages: room.messages,
+      createdAt: room.createdAt,
+      seatOrder: room.seatOrder,
+    };
+  }
+
+  private fromCachedRoomState(state: CachedRoomState): RoomRuntime {
+    return {
+      roomCode: state.roomCode,
+      hostSessionId: state.hostSessionId,
+      engine: state.engine,
+      messages: state.messages,
+      createdAt: state.createdAt,
+      seatOrder: state.seatOrder,
+    };
   }
 
   private generateRoomCode(): string {
