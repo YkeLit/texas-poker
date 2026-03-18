@@ -56,7 +56,8 @@ button {
 .lobby-card,
 .action-panel,
 .chat-panel,
-.board-panel {
+.board-panel,
+.seat-panel {
   background: linear-gradient(180deg, rgba(30, 41, 59, 0.96), rgba(15, 23, 42, 0.94));
   border: 1px solid var(--border);
   border-radius: 28px;
@@ -197,7 +198,7 @@ select {
   max-width: 1040px;
   margin: 0 auto;
   display: grid;
-  gap: 18px;
+  gap: 16px;
 }
 
 .table-stage {
@@ -223,6 +224,7 @@ select {
 }
 
 .board-panel,
+.seat-panel,
 .seat-ring,
 .hero-status {
   position: relative;
@@ -325,6 +327,18 @@ select {
   gap: 10px;
 }
 
+.seat-panel {
+  padding: 16px;
+}
+
+.seat-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
 .seat-node {
   width: 100%;
   min-height: clamp(84px, 9vw, 94px);
@@ -334,6 +348,13 @@ select {
   border: 1px solid rgba(148, 163, 184, 0.14);
   color: var(--text);
   text-align: left;
+}
+
+.seat-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
 }
 
 .seat-node.is-self {
@@ -367,6 +388,35 @@ select {
   margin-top: 4px;
   font-weight: 700;
   line-height: 1.2;
+}
+
+.seat-action-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 24px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  white-space: nowrap;
+  background: rgba(148, 163, 184, 0.16);
+  color: var(--text);
+}
+
+.seat-action-pill.is-safe {
+  background: rgba(59, 130, 246, 0.18);
+  color: #bfdbfe;
+}
+
+.seat-action-pill.is-aggressive {
+  background: rgba(239, 68, 68, 0.18);
+  color: #fecdd3;
+}
+
+.seat-action-pill.is-neutral {
+  background: rgba(148, 163, 184, 0.14);
+  color: #cbd5e1;
 }
 
 .hero-status {
@@ -414,6 +464,10 @@ select {
 .action-panel,
 .chat-panel {
   padding: 20px;
+}
+
+.table-main > .action-panel {
+  padding: 18px 20px;
 }
 
 .action-panel.is-compact {
@@ -568,6 +622,15 @@ select {
     padding: 18px 14px;
   }
 
+  .seat-panel {
+    padding: 14px;
+  }
+
+  .seat-panel-header {
+    align-items: start;
+    flex-direction: column;
+  }
+
   .board-cards {
     gap: 8px;
     margin: 18px 0;
@@ -595,6 +658,11 @@ select {
   .seat-node {
     min-height: 84px;
     padding: 8px;
+  }
+
+  .seat-action-pill {
+    font-size: 0.68rem;
+    padding: 2px 6px;
   }
 
   .hero-status {

@@ -188,6 +188,27 @@ describe("server integration", () => {
     });
   });
 
+  it("includes each player's latest action in room snapshots", async () => {
+    const [host, guest] = await Promise.all([
+      instance.roomService.createGuestSession("房主"),
+      instance.roomService.createGuestSession("玩家二"),
+    ]);
+    const room = await instance.roomService.createRoom(host.sessionId, FAST_CONFIG);
+
+    await instance.roomService.takeSeat(room.roomCode, host.sessionId, 0);
+    await instance.roomService.takeSeat(room.roomCode, guest.sessionId, 1);
+    await instance.roomService.toggleReady(room.roomCode, host.sessionId, true);
+    await instance.roomService.toggleReady(room.roomCode, guest.sessionId, true);
+    await instance.roomService.startHand(room.roomCode, host.sessionId);
+    await instance.roomService.submitAction(room.roomCode, host.sessionId, { type: "call" });
+
+    const snapshot = instance.roomService.buildSnapshot(room.roomCode, guest.sessionId);
+    expect(snapshot.seats[0]?.player?.lastAction).toEqual({
+      label: "跟注 10",
+      tone: "safe",
+    });
+  });
+
   it("auto-folds on timeout and lets a disconnected player resume the same seat", async () => {
     const [host, guest] = await Promise.all([
       instance.roomService.createGuestSession("房主"),

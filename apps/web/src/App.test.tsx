@@ -4,6 +4,7 @@ import type { RoomSnapshot } from "@texas-poker/shared";
 import { resolveSocketOrigin } from "./App";
 import { ActionPanel } from "./components/ActionPanel";
 import { CommunityBoard } from "./components/CommunityBoard";
+import { SeatRing } from "./components/SeatRing";
 
 const snapshot: RoomSnapshot = {
   roomCode: "ABC123",
@@ -178,5 +179,33 @@ describe("web components", () => {
       />,
     );
     expect(readyMarkup).toContain("开始第一手");
+  });
+
+  it("renders the latest player action on seat cards", () => {
+    const markup = renderToStaticMarkup(
+      <SeatRing
+        snapshot={{
+          ...snapshot,
+          seats: snapshot.seats.map((seat) =>
+            seat.seatIndex === 1 && seat.player
+              ? {
+                  ...seat,
+                  player: {
+                    ...seat.player,
+                    lastAction: {
+                      label: "加注到 80",
+                      tone: "aggressive",
+                    },
+                  },
+                }
+              : seat,
+          ),
+        }}
+        onTakeSeat={() => undefined}
+        currentTime={Date.now()}
+      />,
+    );
+
+    expect(markup).toContain("加注到 80");
   });
 });

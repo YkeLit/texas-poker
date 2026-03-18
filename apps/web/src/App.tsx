@@ -87,6 +87,7 @@ export default function App() {
             status: seat.player?.status ?? null,
             presence: seat.player?.presence ?? null,
             currentBet: seat.player?.currentBet ?? 0,
+            lastAction: seat.player?.lastAction?.label ?? null,
           })) ?? [],
       });
 
@@ -356,9 +357,16 @@ export default function App() {
 
         <div className="table-layout">
           <div className="table-main">
+            <ActionPanel
+              snapshot={snapshot}
+              onAction={(action) => handleSeatAction("action.submit", action)}
+              onToggleReady={(ready) => handleSeatAction(ready ? "player.ready" : "player.unready")}
+              onStartHand={() => handleSeatAction("hand.start")}
+              onLeaveSeat={() => handleSeatAction("seat.leave")}
+            />
+
             <section className="table-stage">
               <CommunityBoard board={snapshot.board} pots={snapshot.pots} stage={snapshot.stage} handNumber={snapshot.handNumber} />
-              <SeatRing snapshot={snapshot} onTakeSeat={(seatIndex) => handleSeatAction("seat.take", { seatIndex })} currentTime={currentTime} />
               <div className="hero-status">
                 <span className="hero-status-copy">{status}</span>
                 {snapshot.yourHoleCards && snapshot.yourHoleCards.length > 0 && (
@@ -374,13 +382,13 @@ export default function App() {
               </div>
             </section>
 
-            <ActionPanel
-              snapshot={snapshot}
-              onAction={(action) => handleSeatAction("action.submit", action)}
-              onToggleReady={(ready) => handleSeatAction(ready ? "player.ready" : "player.unready")}
-              onStartHand={() => handleSeatAction("hand.start")}
-              onLeaveSeat={() => handleSeatAction("seat.leave")}
-            />
+            <section className="seat-panel">
+              <div className="seat-panel-header">
+                <span>座位与最近操作</span>
+                <span className="muted-copy">入座在下方，当前动作与最近操作会直接显示在座位卡片里。</span>
+              </div>
+              <SeatRing snapshot={snapshot} onTakeSeat={(seatIndex) => handleSeatAction("seat.take", { seatIndex })} currentTime={currentTime} />
+            </section>
           </div>
 
           <button type="button" className={`chat-fab ${chatDrawerOpen ? "is-open" : ""}`} onClick={() => setChatDrawerOpen((value) => !value)}>

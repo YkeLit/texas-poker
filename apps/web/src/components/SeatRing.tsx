@@ -40,7 +40,10 @@ function SeatNode(props: {
       disabled={props.seat.occupied}
       onClick={() => props.onTakeSeat(props.seat.seatIndex)}
     >
-      <span className="seat-index">{props.seat.seatIndex + 1}号位</span>
+      <span className="seat-header-row">
+        <span className="seat-index">{props.seat.seatIndex + 1}号位</span>
+        {player?.lastAction && <span className={`seat-action-pill is-${player.lastAction.tone}`}>{player.lastAction.label}</span>}
+      </span>
       {player ? (
         <>
           <span className="seat-name">
