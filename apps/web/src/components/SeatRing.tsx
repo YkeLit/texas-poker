@@ -5,9 +5,13 @@ export function SeatRing(props: {
   onTakeSeat: (seatIndex: number) => void;
   currentTime: number;
 }) {
+  const visibleSeats = shouldHideEmptySeats(props.snapshot)
+    ? props.snapshot.seats.filter((seat) => seat.occupied)
+    : props.snapshot.seats;
+
   return (
     <div className="seat-ring" aria-label="牌桌座位">
-      {props.snapshot.seats.map((seat) => (
+      {visibleSeats.map((seat) => (
         <SeatNode
           key={seat.seatIndex}
           seat={seat}
@@ -82,4 +86,8 @@ function labelForPlayer(status: string, ready: boolean, presence: string) {
     out: "出局",
     "sit-out": "暂离",
   }[status] ?? status;
+}
+
+function shouldHideEmptySeats(snapshot: RoomSnapshot) {
+  return snapshot.handNumber > 0 || snapshot.stage !== "waiting";
 }
