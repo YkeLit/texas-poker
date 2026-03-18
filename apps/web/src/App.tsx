@@ -3,6 +3,8 @@ import { io, type Socket } from "socket.io-client";
 import {
   ACTION_TIME_PRESETS,
   BLIND_PRESETS,
+  type ChatMessage,
+  MAX_TABLE_PLAYERS,
   STARTING_STACK_PRESETS,
   type GuestSession,
   type RoomConfig,
@@ -12,6 +14,7 @@ import { createGuestSession, createRoom, getRoomSummary, joinRoom, reportClientE
 import { ActionPanel } from "./components/ActionPanel";
 import { ChatPanel } from "./components/ChatPanel";
 import { CommunityBoard } from "./components/CommunityBoard";
+import { PlayingCard } from "./components/PlayingCard";
 import { SeatRing } from "./components/SeatRing";
 
 const STORAGE_KEYS = {
@@ -20,7 +23,7 @@ const STORAGE_KEYS = {
 };
 
 const DEFAULT_CONFIG: RoomConfig = {
-  maxPlayers: 6,
+  maxPlayers: MAX_TABLE_PLAYERS,
   startingStack: STARTING_STACK_PRESETS[1],
   smallBlind: BLIND_PRESETS[0].smallBlind,
   bigBlind: BLIND_PRESETS[0].bigBlind,
@@ -163,8 +166,8 @@ export default function App() {
         setStatus(`已进入房间 ${nextSnapshot.roomCode}`);
       });
 
-      socket.on("chat.message", () => {
-        setTick((value) => value + 1);
+      socket.on("chat.message", (message: ChatMessage) => {
+        setSnapshot((current) => mergeChatMessage(current, message));
       });
 
       socket.on("connect_error", (event) => {
@@ -199,7 +202,10 @@ export default function App() {
   async function handleCreateRoom() {
     try {
       const activeSession = await ensureSession();
-      const response = await createRoom(activeSession.sessionId, config);
+      const response = await createRoom(activeSession.sessionId, {
+        ...config,
+        maxPlayers: MAX_TABLE_PLAYERS,
+      });
       await connectToRoom(response.roomCode, activeSession);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -262,16 +268,7 @@ export default function App() {
         <section className="lobby-grid">
           <article className="lobby-card">
             <h2>创建好友房</h2>
-            <label>
-              人数上限
-              <select value={config.maxPlayers} onChange={(event) => setConfig((current) => ({ ...current, maxPlayers: Number(event.target.value) }))}>
-                {Array.from({ length: 8 }, (_, index) => index + 2).map((value) => (
-                  <option key={value} value={value}>
-                    {value} 人桌
-                  </option>
-                ))}
-              </select>
-            </label>
+            <p className="muted-copy">固定 {MAX_TABLE_PLAYERS} 人桌，进入房间后再选座位，所有已入座玩家准备后即可开局。</p>
             <label>
               起始筹码
               <select
@@ -355,15 +352,28 @@ export default function App() {
             <span className="eyebrow">好友房</span>
             <h1>{roomSummary}</h1>
           </div>
-          <div className="top-actions">
-            <button type="button" className="ghost-btn" onClick={() => setChatDrawerOpen((value) => !value)}>
-              {chatDrawerOpen ? "收起聊天" : "打开聊天"}
-            </button>
-          </div>
         </header>
 
         <div className="table-layout">
-          <aside className="side-stack">
+          <div className="table-main">
+            <section className="table-stage">
+              <CommunityBoard board={snapshot.board} pots={snapshot.pots} stage={snapshot.stage} handNumber={snapshot.handNumber} />
+              <SeatRing snapshot={snapshot} onTakeSeat={(seatIndex) => handleSeatAction("seat.take", { seatIndex })} currentTime={currentTime} />
+              <div className="hero-status">
+                <span className="hero-status-copy">{status}</span>
+                {snapshot.yourHoleCards && snapshot.yourHoleCards.length > 0 && (
+                  <div className="hero-hole-cards">
+                    <span className="hero-hole-label">你的底牌</span>
+                    <div className="hero-hole-card-list" aria-label="你的底牌">
+                      {snapshot.yourHoleCards.map((card, index) => (
+                        <PlayingCard key={`${card.rank}-${card.suit}-${index}`} card={card} compact variant="hero" />
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </section>
+
             <ActionPanel
               snapshot={snapshot}
               onAction={(action) => handleSeatAction("action.submit", action)}
@@ -371,24 +381,16 @@ export default function App() {
               onStartHand={() => handleSeatAction("hand.start")}
               onLeaveSeat={() => handleSeatAction("seat.leave")}
             />
-          </aside>
+          </div>
 
-          <section className="table-stage">
-            <CommunityBoard board={snapshot.board} pots={snapshot.pots} stage={snapshot.stage} handNumber={snapshot.handNumber} />
-            <SeatRing snapshot={snapshot} onTakeSeat={(seatIndex) => handleSeatAction("seat.take", { seatIndex })} currentTime={currentTime} />
-            <div className="hero-status">
-              <span>{status}</span>
-              {snapshot.yourHoleCards && snapshot.yourHoleCards.length > 0 && (
-                <span>你的底牌：{snapshot.yourHoleCards.map(cardToText).join(" · ")}</span>
-              )}
-            </div>
-          </section>
-
-          <aside className={`chat-stack ${chatDrawerOpen ? "is-open" : ""}`}>
+          <button type="button" className={`chat-fab ${chatDrawerOpen ? "is-open" : ""}`} onClick={() => setChatDrawerOpen((value) => !value)}>
+            {chatDrawerOpen ? "收起聊天" : "聊天"}
+          </button>
+          <aside className={`chat-floating ${chatDrawerOpen ? "is-open" : ""}`}>
             <ChatPanel
               messages={snapshot.messages}
               onSendChat={(content) => handleSeatAction("chat.send", { content })}
-              onSendEmoji={(content) => handleSeatAction("emoji.send", { content })}
+              canSend={snapshot.yourSeatIndex !== null && snapshot.yourSeatIndex !== undefined}
             />
           </aside>
         </div>
@@ -425,15 +427,19 @@ export function resolveSocketOrigin(browserOrigin: string, explicitOrigin?: stri
   return url.origin;
 }
 
-function cardToText(card: { rank: number; suit: string }) {
-  const rank = card.rank <= 10 ? String(card.rank) : ({ 11: "J", 12: "Q", 13: "K", 14: "A" }[card.rank] ?? "?");
-  const suit = {
-    clubs: "♣",
-    diamonds: "♦",
-    hearts: "♥",
-    spades: "♠",
-  }[card.suit as "clubs" | "diamonds" | "hearts" | "spades"];
-  return `${rank}${suit}`;
+function mergeChatMessage(snapshot: RoomSnapshot | null, message: ChatMessage) {
+  if (!snapshot) {
+    return snapshot;
+  }
+
+  if (snapshot.messages.some((current) => current.id === message.id)) {
+    return snapshot;
+  }
+
+  return {
+    ...snapshot,
+    messages: [...snapshot.messages.slice(-49), message],
+  };
 }
 
 declare global {

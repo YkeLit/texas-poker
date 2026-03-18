@@ -2,6 +2,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import {
   CHAT_THROTTLE_MS,
   EMOJI_THROTTLE_MS,
+  MAX_TABLE_PLAYERS,
   NEXT_HAND_DELAY_MS,
   type ChatMessage,
   type CreateRoomResponse,
@@ -81,7 +82,12 @@ export class RoomService {
 
   async createRoom(sessionId: string, config: RoomConfig): Promise<CreateRoomResponse> {
     const session = await this.ensureSessionLoaded(sessionId);
-    if (!isBlindPreset(config)) {
+    const normalizedConfig: RoomConfig = {
+      ...config,
+      maxPlayers: MAX_TABLE_PLAYERS,
+    };
+
+    if (!isBlindPreset(normalizedConfig)) {
       throw new Error("Unsupported blind structure");
     }
 
@@ -89,7 +95,7 @@ export class RoomService {
     const room: RoomRuntime = {
       roomCode,
       hostSessionId: sessionId,
-      engine: createPokerEngine(config),
+      engine: createPokerEngine(normalizedConfig),
       messages: [],
       createdAt: new Date().toISOString(),
       seatOrder: [],
@@ -98,7 +104,7 @@ export class RoomService {
     this.rooms.set(roomCode, room);
     session.currentRoomCode = roomCode;
     this.metrics.setActiveRooms(this.rooms.size);
-    await this.persistence.createRoom(roomCode, sessionId, config);
+    await this.persistence.createRoom(roomCode, sessionId, normalizedConfig);
     await this.syncCache(roomCode);
     return {
       roomCode,

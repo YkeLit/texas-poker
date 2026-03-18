@@ -8,7 +8,7 @@ import { CommunityBoard } from "./components/CommunityBoard";
 const snapshot: RoomSnapshot = {
   roomCode: "ABC123",
   config: {
-    maxPlayers: 6,
+    maxPlayers: 9,
     startingStack: 1000,
     smallBlind: 10,
     bigBlind: 20,
@@ -108,5 +108,75 @@ describe("web components", () => {
     expect(markup).toContain("弃牌");
     expect(markup).toContain("跟注 10");
     expect(markup).toContain("加注 40-1000");
+  });
+
+  it("only shows the start button when every seated player is ready", () => {
+    const waitingSnapshot: RoomSnapshot = {
+      ...snapshot,
+      stage: "waiting",
+      actingSeatIndex: null,
+      currentBet: 0,
+      minRaiseTo: null,
+      yourAvailableActions: [],
+      seats: [
+        snapshot.seats[0]!,
+        snapshot.seats[1]!,
+        {
+          seatIndex: 2,
+          occupied: true,
+          player: {
+            sessionId: "guest-2",
+            nickname: "玩家三",
+            seatIndex: 2,
+            stack: 1000,
+            currentBet: 0,
+            totalCommitted: 0,
+            ready: false,
+            isHost: false,
+            status: "waiting",
+            presence: "connected",
+            canAct: false,
+            holeCardCount: 2,
+            missedHands: 0,
+          },
+        },
+        ...snapshot.seats.slice(3),
+      ],
+    };
+
+    const blockedMarkup = renderToStaticMarkup(
+      <ActionPanel
+        snapshot={waitingSnapshot}
+        onAction={() => undefined}
+        onToggleReady={() => undefined}
+        onStartHand={() => undefined}
+        onLeaveSeat={() => undefined}
+      />,
+    );
+    expect(blockedMarkup).not.toContain("开始第一手");
+
+    const readyMarkup = renderToStaticMarkup(
+      <ActionPanel
+        snapshot={{
+          ...waitingSnapshot,
+          seats: waitingSnapshot.seats.map((seat) =>
+            seat.seatIndex === 2 && seat.player
+              ? {
+                  ...seat,
+                  player: {
+                    ...seat.player,
+                    ready: true,
+                  },
+                }
+              : seat,
+          ),
+        }}
+        onAction={() => undefined}
+        onToggleReady={() => undefined}
+        onStartHand={() => undefined}
+        onLeaveSeat={() => undefined}
+      />,
+    );
+    expect(readyMarkup).toContain("开始第一手");
   });
 });

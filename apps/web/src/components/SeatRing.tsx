@@ -36,7 +36,7 @@ function SeatNode(props: {
   return (
     <button
       type="button"
-      className={`seat-node seat-${props.seat.seatIndex} ${isSelf ? "is-self" : ""} ${isActing ? "is-acting" : ""}`}
+      className={`seat-node ${isSelf ? "is-self" : ""} ${isActing ? "is-acting" : ""}`}
       disabled={props.seat.occupied}
       onClick={() => props.onTakeSeat(props.seat.seatIndex)}
     >

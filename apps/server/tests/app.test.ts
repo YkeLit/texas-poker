@@ -108,6 +108,7 @@ describe("server integration", () => {
     expect(room.roomCode).toHaveLength(6);
     expect(joinPayload.wsToken).toBeTypeOf("string");
     expect(joinPayload.snapshot.roomCode).toBe(room.roomCode);
+    expect(joinPayload.snapshot.config.maxPlayers).toBe(9);
   });
 
   it("parses multiple client origins and returns CORS headers for each allowed origin", async () => {
@@ -160,6 +161,31 @@ describe("server integration", () => {
       "It is not this player's turn",
     );
     await expect(instance.roomService.takeSeat(room.roomCode, third.sessionId, 0)).rejects.toThrow("Seat is already occupied");
+  });
+
+  it("requires every seated player to be ready before the host can start a hand", async () => {
+    const [host, guest, latePlayer] = await Promise.all([
+      instance.roomService.createGuestSession("房主"),
+      instance.roomService.createGuestSession("玩家二"),
+      instance.roomService.createGuestSession("玩家三"),
+    ]);
+    const room = await instance.roomService.createRoom(host.sessionId, FAST_CONFIG);
+
+    await instance.roomService.takeSeat(room.roomCode, host.sessionId, 0);
+    await instance.roomService.takeSeat(room.roomCode, guest.sessionId, 1);
+    await instance.roomService.takeSeat(room.roomCode, latePlayer.sessionId, 2);
+    await instance.roomService.toggleReady(room.roomCode, host.sessionId, true);
+    await instance.roomService.toggleReady(room.roomCode, guest.sessionId, true);
+
+    await expect(instance.roomService.startHand(room.roomCode, host.sessionId)).rejects.toThrow(
+      "All seated players must be connected and ready, with at least two players",
+    );
+
+    await instance.roomService.toggleReady(room.roomCode, latePlayer.sessionId, true);
+    await expect(instance.roomService.startHand(room.roomCode, host.sessionId)).resolves.toMatchObject({
+      roomCode: room.roomCode,
+      handNumber: 1,
+    });
   });
 
   it("auto-folds on timeout and lets a disconnected player resume the same seat", async () => {
