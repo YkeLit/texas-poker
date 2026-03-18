@@ -22,6 +22,7 @@ export type PlayerPresence = "connected" | "disconnected";
 export type PlayerStatus = "waiting" | "active" | "folded" | "all-in" | "out" | "sit-out";
 export type ActionType = "fold" | "check" | "call" | "bet" | "raise" | "all_in";
 export type ChatMessageType = "chat" | "emoji" | "system";
+export type RecentActionTone = "neutral" | "safe" | "aggressive";
 
 export interface Card {
   rank: number;
@@ -42,6 +43,11 @@ export interface AvailableAction {
   maxAmount?: number;
 }
 
+export interface RecentPlayerAction {
+  label: string;
+  tone: RecentActionTone;
+}
+
 export interface PublicPlayerState {
   sessionId: string;
   nickname: string;
@@ -57,6 +63,7 @@ export interface PublicPlayerState {
   holeCardCount: number;
   revealedCards?: Card[];
   missedHands: number;
+  lastAction?: RecentPlayerAction;
 }
 
 export interface SeatState {

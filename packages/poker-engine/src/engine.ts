@@ -7,6 +7,7 @@ import type {
   PlayerPresence,
   PlayerStatus,
   PotState,
+  RecentPlayerAction,
   RoomConfig,
   TableStage,
 } from "@texas-poker/shared";
@@ -28,6 +29,7 @@ export interface EnginePlayer {
   holeCards: Card[];
   revealedCards?: Card[];
   missedHands: number;
+  lastAction?: RecentPlayerAction;
 }
 
 export interface PokerEngineState {

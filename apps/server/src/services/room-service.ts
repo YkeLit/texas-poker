@@ -9,6 +9,8 @@ import {
   type GuestSession,
   type JoinRoomResponse,
   type PlayerActionCommand,
+  type RecentActionTone,
+  type RecentPlayerAction,
   type RoomConfig,
   type RoomSnapshot,
   type RoomSummary,
@@ -220,6 +222,7 @@ export class RoomService {
       isHost: room.hostSessionId === sessionId,
     });
     player.presence = "connected";
+    player.lastAction = makeRecentAction("已入座", "neutral");
     addSeatOrder(room, sessionId);
     await this.emitEvent(roomCode, "player.presence", { seatIndex, sessionId, presence: "connected" });
     await this.afterMutation(roomCode);
@@ -243,6 +246,7 @@ export class RoomService {
     const room = await this.ensureRoomLoaded(roomCode);
     const seatIndex = this.requireSeat(room.engine, sessionId);
     setPlayerReady(room.engine, seatIndex, ready);
+    room.engine.seats[seatIndex]!.lastAction = makeRecentAction(ready ? "已准备" : "取消准备", ready ? "safe" : "neutral");
     await this.afterMutation(roomCode);
     return this.buildSnapshot(roomCode, sessionId);
   }
@@ -253,6 +257,7 @@ export class RoomService {
       throw new Error("Only the host can start the first hand");
     }
 
+    clearRecentActions(room.engine);
     startHand(room.engine, new Date());
     await this.emitEvent(roomCode, "action.applied", { type: "hand.start", seatIndex: this.requireSeat(room.engine, sessionId) });
     this.scheduleTurn(roomCode);
@@ -263,9 +268,13 @@ export class RoomService {
   async submitAction(roomCode: string, sessionId: string, action: PlayerActionCommand): Promise<RoomSnapshot> {
     const room = await this.ensureRoomLoaded(roomCode);
     const seatIndex = this.requireSeat(room.engine, sessionId);
+    const player = room.engine.seats[seatIndex]!;
     const beforeStage = room.engine.stage;
+    const toCall = Math.max(0, room.engine.currentBet - player.currentBet);
+    const stackBeforeAction = player.stack;
 
     applyPlayerAction(room.engine, seatIndex, action, new Date());
+    player.lastAction = formatRecentAction(action, { toCall, stackBeforeAction });
     await this.emitEvent(roomCode, "action.applied", { seatIndex, action });
     await this.emitEvent(roomCode, "pot.updated", { pots: room.engine.pots, currentBet: room.engine.currentBet });
 
@@ -442,6 +451,7 @@ export class RoomService {
       if (!canStartHand(room.engine)) {
         return;
       }
+      clearRecentActions(room.engine);
       startHand(room.engine, new Date());
       void this.emitEvent(roomCode, "action.applied", { type: "hand.auto_start" });
       void this.afterMutation(roomCode);
@@ -568,6 +578,7 @@ export class RoomService {
         if (!canStartHand(room.engine)) {
           return;
         }
+        clearRecentActions(room.engine);
         startHand(room.engine, new Date());
         void this.emitEvent(roomCode, "action.applied", { type: "hand.auto_start" });
         void this.afterMutation(roomCode);
@@ -626,6 +637,7 @@ export class RoomService {
       holeCardCount: player.holeCards.length,
       revealedCards: player.revealedCards,
       missedHands: player.missedHands,
+      lastAction: player.lastAction,
     };
   }
 
@@ -665,5 +677,38 @@ export class RoomService {
 function addSeatOrder(room: RoomRuntime, sessionId: string): void {
   if (!room.seatOrder.includes(sessionId)) {
     room.seatOrder.push(sessionId);
+  }
+}
+
+function clearRecentActions(engine: PokerEngineState): void {
+  for (const player of engine.seats) {
+    if (player) {
+      player.lastAction = undefined;
+    }
+  }
+}
+
+function makeRecentAction(label: string, tone: RecentActionTone): RecentPlayerAction {
+  return { label, tone };
+}
+
+function formatRecentAction(
+  action: PlayerActionCommand,
+  meta: { toCall: number; stackBeforeAction: number },
+): RecentPlayerAction {
+  switch (action.type) {
+    case "check":
+      return makeRecentAction("过牌", "safe");
+    case "call":
+      return makeRecentAction(`跟注 ${Math.min(meta.toCall, meta.stackBeforeAction)}`, "safe");
+    case "bet":
+      return makeRecentAction(`下注 ${action.amount ?? ""}`.trim(), "aggressive");
+    case "raise":
+      return makeRecentAction(`加注到 ${action.amount ?? ""}`.trim(), "aggressive");
+    case "all_in":
+      return makeRecentAction(`全下 ${meta.stackBeforeAction}`, "aggressive");
+    case "fold":
+    default:
+      return makeRecentAction("弃牌", "neutral");
   }
 }
