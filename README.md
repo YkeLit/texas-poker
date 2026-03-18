@@ -37,7 +37,7 @@ COREPACK_HOME=/tmp/corepack corepack pnpm build
 ## Docker Compose
 
 ```bash
-docker compose up --build
+docker compose up -d
 ```
 
 Compose 会启动：
@@ -46,6 +46,26 @@ Compose 会启动：
 - Redis
 - 实时服务端
 - Web 客户端
+
+默认会直接拉取 GitHub Actions 构建好的镜像：
+
+- `ghcr.io/ykelit/texas-poker-server:latest`
+- `ghcr.io/ykelit/texas-poker-web:latest`
+
+如果你想切换到别的 tag 或别的仓库，可以在启动前覆盖：
+
+```bash
+export TEXAS_POKER_SERVER_IMAGE=ghcr.io/ykelit/texas-poker-server:main
+export TEXAS_POKER_WEB_IMAGE=ghcr.io/ykelit/texas-poker-web:main
+docker compose up -d
+```
+
+### PostgreSQL 和 Redis 是做什么的
+
+- `PostgreSQL`：持久化游客会话、房间元数据、聊天记录和手牌历史。没有它时，服务重启后这些数据不会保留。
+- `Redis`：保存在线房间快照、重连 token、座位锁这类实时短期状态，也为后续多实例扩展预留空间。
+
+如果你只想跑一个最轻量的本地试玩环境，当前服务端其实也能退回到内存模式；但在正式部署或需要断线恢复、历史留存时，建议保留这两个服务。
 
 ## 调试钩子
 

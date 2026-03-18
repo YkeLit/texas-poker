@@ -1,6 +1,5 @@
-version: "3.9"
-
 services:
+  # PostgreSQL stores guest sessions, room metadata, chat logs and hand history.
   postgres:
     image: postgres:16-alpine
     environment:
@@ -12,20 +11,20 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
 
+  # Redis keeps hot room snapshots, reconnect tokens and other short-lived realtime state.
   redis:
     image: redis:7-alpine
     ports:
       - "6379:6379"
 
   server:
-    build:
-      context: .
-      dockerfile: ./apps/server/Dockerfile
+    image: ${TEXAS_POKER_SERVER_IMAGE:-ghcr.io/ykelit/texas-poker-server:latest}
+    pull_policy: always
     environment:
       HOST: 0.0.0.0
       PORT: 3001
       CLIENT_ORIGIN: http://127.0.0.1:5173
-      TOKEN_SECRET: local-dev-secret
+      TOKEN_SECRET: ${TOKEN_SECRET:-local-dev-secret}
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/texas_poker
       REDIS_URL: redis://redis:6379
     depends_on:
@@ -35,11 +34,10 @@ services:
       - "3001:3001"
 
   web:
-    build:
-      context: .
-      dockerfile: ./apps/web/Dockerfile
+    image: ${TEXAS_POKER_WEB_IMAGE:-ghcr.io/ykelit/texas-poker-web:latest}
+    pull_policy: always
     environment:
-      VITE_SERVER_ORIGIN: http://server:3001
+      VITE_SERVER_ORIGIN: ${VITE_SERVER_ORIGIN:-http://server:3001}
     depends_on:
       - server
     ports:
