@@ -36,6 +36,17 @@ class InMemoryPersistenceAdapter implements PersistenceAdapter {
     return session ? { ...session } : null;
   }
 
+  async updateGuestSessionNickname(sessionId: string, nickname: string): Promise<void> {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      throw new Error("Session not found");
+    }
+    this.sessions.set(sessionId, {
+      ...session,
+      nickname,
+    });
+  }
+
   async createRoom(roomCode: string, hostSessionId: string, config: RoomConfig): Promise<void> {
     this.rooms.set(roomCode, {
       roomCode,
@@ -61,6 +72,12 @@ class InMemoryPersistenceAdapter implements PersistenceAdapter {
   }
 
   async close(): Promise<void> {}
+}
+
+class FailingNicknamePersistenceAdapter extends InMemoryPersistenceAdapter {
+  async updateGuestSessionNickname(): Promise<void> {
+    throw new Error("nickname write failed");
+  }
 }
 
 describe("server integration", () => {
@@ -111,6 +128,49 @@ describe("server integration", () => {
     expect(joinPayload.wsToken).toBeTypeOf("string");
     expect(joinPayload.snapshot.roomCode).toBe(room.roomCode);
     expect(joinPayload.snapshot.config.maxPlayers).toBe(9);
+  });
+
+  it("updates lobby nicknames without rewriting already seated players", async () => {
+    const guest = await instance.roomService.createGuestSession("旧昵称");
+    const room = await instance.roomService.createRoom(guest.sessionId, FAST_CONFIG);
+    await instance.roomService.takeSeat(room.roomCode, guest.sessionId, 0);
+
+    const renameResponse = await instance.app.inject({
+      method: "PATCH",
+      url: `/api/v1/guest/sessions/${guest.sessionId}`,
+      payload: {
+        nickname: "新昵称",
+        resumeToken: guest.resumeToken,
+      },
+    });
+
+    expect(renameResponse.statusCode).toBe(200);
+    expect(renameResponse.json().nickname).toBe("新昵称");
+    expect(instance.roomService.buildSnapshot(room.roomCode, guest.sessionId).seats[0]?.player?.nickname).toBe("旧昵称");
+
+    await instance.roomService.leaveSeat(room.roomCode, guest.sessionId);
+    await instance.roomService.takeSeat(room.roomCode, guest.sessionId, 0);
+
+    expect(instance.roomService.buildSnapshot(room.roomCode, guest.sessionId).seats[0]?.player?.nickname).toBe("新昵称");
+  });
+
+  it("keeps the old in-memory nickname when nickname persistence fails", async () => {
+    await instance.close();
+
+    const persistence = new FailingNicknamePersistenceAdapter();
+    const cache = new MemoryCacheAdapter();
+    instance = await buildApp({ config: TEST_CONFIG, persistence, cache });
+
+    const guest = await instance.roomService.createGuestSession("旧昵称");
+
+    await expect(
+      instance.roomService.updateGuestSessionNickname(guest.sessionId, guest.resumeToken, "新昵称"),
+    ).rejects.toThrow("nickname write failed");
+
+    const room = await instance.roomService.createRoom(guest.sessionId, FAST_CONFIG);
+    await instance.roomService.takeSeat(room.roomCode, guest.sessionId, 0);
+
+    expect(instance.roomService.buildSnapshot(room.roomCode, guest.sessionId).seats[0]?.player?.nickname).toBe("旧昵称");
   });
 
   it("parses multiple client origins and returns CORS headers for each allowed origin", async () => {
@@ -208,6 +268,33 @@ describe("server integration", () => {
     expect(snapshot.seats[0]?.player?.lastAction).toEqual({
       label: "跟注 10",
       tone: "safe",
+    });
+  });
+
+  it("formats raise actions as additive chip amounts", async () => {
+    const [host, guest, third] = await Promise.all([
+      instance.roomService.createGuestSession("房主"),
+      instance.roomService.createGuestSession("玩家二"),
+      instance.roomService.createGuestSession("玩家三"),
+    ]);
+    const room = await instance.roomService.createRoom(host.sessionId, {
+      ...FAST_CONFIG,
+      maxPlayers: 3,
+    });
+
+    await instance.roomService.takeSeat(room.roomCode, host.sessionId, 0);
+    await instance.roomService.takeSeat(room.roomCode, guest.sessionId, 1);
+    await instance.roomService.takeSeat(room.roomCode, third.sessionId, 2);
+    await instance.roomService.toggleReady(room.roomCode, host.sessionId, true);
+    await instance.roomService.toggleReady(room.roomCode, guest.sessionId, true);
+    await instance.roomService.toggleReady(room.roomCode, third.sessionId, true);
+    await instance.roomService.startHand(room.roomCode, host.sessionId);
+    await instance.roomService.submitAction(room.roomCode, host.sessionId, { type: "raise", amount: 60 });
+
+    const snapshot = instance.roomService.buildSnapshot(room.roomCode, guest.sessionId);
+    expect(snapshot.seats[0]?.player?.lastAction).toEqual({
+      label: "加注 60",
+      tone: "aggressive",
     });
   });
 

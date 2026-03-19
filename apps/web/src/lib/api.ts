@@ -27,6 +27,14 @@ export function createGuestSession(nickname: string) {
   });
 }
 
+export function updateGuestSessionNickname(sessionId: string, nickname: string, resumeToken: string) {
+  return requestJson<GuestSession>(`/api/v1/guest/sessions/${sessionId}`, {
+    method: "PATCH",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ nickname, resumeToken }),
+  });
+}
+
 export function createRoom(sessionId: string, config: RoomConfig) {
   return requestJson<CreateRoomResponse>("/api/v1/rooms", {
     method: "POST",

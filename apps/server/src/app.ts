@@ -10,6 +10,7 @@ import {
   playerActionSchema,
   reconnectSchema,
   seatActionSchema,
+  updateGuestSessionSchema,
 } from "@texas-poker/shared";
 import { normalizeClientOrigins, readConfig, type AppConfig } from "./config";
 import { createPrismaClient } from "./db/prisma";
@@ -94,6 +95,25 @@ export async function buildApp(options: BuildAppOptions = {}) {
 
     const session = await roomService.createGuestSession(parsed.data.nickname);
     return reply.code(201).send(session);
+  });
+
+  app.patch("/api/v1/guest/sessions/:sessionId", async (request, reply) => {
+    const sessionId = (request.params as { sessionId: string }).sessionId;
+    const parsed = updateGuestSessionSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.flatten() });
+    }
+
+    try {
+      const session = await roomService.updateGuestSessionNickname(
+        sessionId,
+        parsed.data.resumeToken,
+        parsed.data.nickname,
+      );
+      return reply.send(session);
+    } catch (error) {
+      return reply.code(400).send({ error: toErrorMessage(error) });
+    }
   });
 
   app.post("/api/v1/rooms", async (request, reply) => {

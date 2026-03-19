@@ -109,6 +109,8 @@ export interface RoomSnapshot {
   handNumber: number;
   stage: TableStage;
   dealerSeatIndex: number | null;
+  smallBlindSeatIndex: number | null;
+  bigBlindSeatIndex: number | null;
   actingSeatIndex: number | null;
   actionDeadlineAt: string | null;
   minRaiseTo: number | null;
@@ -195,6 +197,11 @@ export const roomConfigSchema = z.object({
 
 export const createGuestSessionSchema = z.object({
   nickname: z.string().trim().min(1).max(20),
+});
+
+export const updateGuestSessionSchema = z.object({
+  nickname: z.string().trim().min(1).max(20),
+  resumeToken: z.string().min(1),
 });
 
 export const createRoomSchema = z.object({

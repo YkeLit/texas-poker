@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { RoomSnapshot } from "@texas-poker/shared";
 import { parseRoomConfigDraft, resolveSocketOrigin, roomConfigToDraft } from "./App";
-import { ActionPanel } from "./components/ActionPanel";
+import { ActionPanel, createActionPayload, getWagerRange, resolveWagerAmount } from "./components/ActionPanel";
 import { CommunityBoard } from "./components/CommunityBoard";
 import { SeatRing } from "./components/SeatRing";
 
@@ -20,6 +20,8 @@ const snapshot: RoomSnapshot = {
   handNumber: 1,
   stage: "preflop",
   dealerSeatIndex: 0,
+  smallBlindSeatIndex: 0,
+  bigBlindSeatIndex: 1,
   actingSeatIndex: 0,
   actionDeadlineAt: null,
   minRaiseTo: 40,
@@ -154,8 +156,52 @@ describe("web components", () => {
 
     expect(markup).toContain("弃牌");
     expect(markup).toContain("跟注 10");
-    expect(markup).toContain("下注 / 加注");
-    expect(markup).toContain('placeholder="最小 40"');
+    expect(markup).toContain("确认加注");
+    expect(markup).toContain("本次追加筹码");
+    expect(markup).toContain('placeholder="最小 30"');
+  });
+
+  it("shows additive raise controls when action returns to the big blind unopened", () => {
+    const markup = renderToStaticMarkup(
+      <ActionPanel
+        snapshot={{
+          ...snapshot,
+          actingSeatIndex: 1,
+          yourSessionId: "guest",
+          yourSeatIndex: 1,
+          yourHoleCards: [
+            { rank: 9, suit: "clubs" },
+            { rank: 9, suit: "spades" },
+          ],
+          yourAvailableActions: [
+            { type: "fold" },
+            { type: "check" },
+            { type: "raise", minAmount: 40, maxAmount: 1000 },
+          ],
+        }}
+        onAction={() => undefined}
+        onToggleReady={() => undefined}
+        onStartHand={() => undefined}
+        onLeaveSeat={() => undefined}
+      />,
+    );
+
+    expect(markup).toContain("过牌");
+    expect(markup).toContain("确认加注");
+    expect(markup).toContain('placeholder="最小 20"');
+    expect(markup).toContain("最小 20，最大 980");
+  });
+
+  it("converts additive wager drafts back into target totals for socket actions", () => {
+    const raiseAction = { type: "raise", minAmount: 40, maxAmount: 1000 } as const;
+    const range = getWagerRange(raiseAction, 20);
+    const resolvedAmount = resolveWagerAmount(35, range);
+
+    expect(range).toEqual({ min: 20, max: 980 });
+    expect(createActionPayload(raiseAction, resolvedAmount, 20)).toEqual({
+      type: "raise",
+      amount: 55,
+    });
   });
 
   it("only shows the start button when every seated player is ready", () => {
@@ -272,7 +318,7 @@ describe("web components", () => {
                   player: {
                     ...seat.player,
                     lastAction: {
-                      label: "加注到 80",
+                      label: "加注 80",
                       tone: "aggressive",
                     },
                   },
@@ -285,7 +331,57 @@ describe("web components", () => {
       />,
     );
 
-    expect(markup).toContain("加注到 80");
+    expect(markup).toContain("加注 80");
+  });
+
+  it("renders showdown cards only for opponents with revealed cards", () => {
+    const markup = renderToStaticMarkup(
+      <SeatRing
+        snapshot={{
+          ...snapshot,
+          stage: "showdown",
+          seats: snapshot.seats.map((seat) =>
+            seat.seatIndex === 1 && seat.player
+              ? {
+                  ...seat,
+                  player: {
+                    ...seat.player,
+                    revealedCards: [
+                      { rank: 14, suit: "hearts" },
+                      { rank: 14, suit: "diamonds" },
+                    ],
+                  },
+                }
+              : seat,
+          ),
+        }}
+        onTakeSeat={() => undefined}
+        currentTime={Date.now()}
+      />,
+    );
+
+    expect(markup).toContain("玩家二 已公开底牌");
+    expect(markup).toContain("A♥");
+    expect(markup).toContain("A♦");
+  });
+
+  it("renders dealer and blind badges on occupied seats, including heads-up dealer small blind", () => {
+    const markup = renderToStaticMarkup(
+      <SeatRing
+        snapshot={{
+          ...snapshot,
+          dealerSeatIndex: 0,
+          smallBlindSeatIndex: 0,
+          bigBlindSeatIndex: 1,
+        }}
+        onTakeSeat={() => undefined}
+        currentTime={Date.now()}
+      />,
+    );
+
+    expect(markup).toContain("庄");
+    expect(markup).toContain("小盲");
+    expect(markup).toContain("大盲");
   });
 
   it("hides empty seats after the game has started", () => {

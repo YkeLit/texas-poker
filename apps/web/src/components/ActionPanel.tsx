@@ -18,13 +18,15 @@ export function ActionPanel(props: {
     () => availableActions.filter((action) => action.type !== "bet" && action.type !== "raise"),
     [availableActions],
   );
-  const submitAmount = resolveWagerAmount(amount, wagerAction);
   const seated = props.snapshot.yourSeatIndex !== null && props.snapshot.yourSeatIndex !== undefined;
   const selfSeat = seated ? props.snapshot.seats[props.snapshot.yourSeatIndex!] : undefined;
   const selfPlayer = selfSeat?.player;
+  const selfCurrentBet = selfPlayer?.currentBet ?? 0;
+  const wagerRange = useMemo(() => getWagerRange(wagerAction, selfCurrentBet), [selfCurrentBet, wagerAction]);
   const isHost = selfPlayer?.isHost ?? false;
   const canStart = isHost && canStartFromSnapshot(props.snapshot);
   const canShowStartControls = seated && (props.snapshot.stage === "waiting" || props.snapshot.stage === "showdown");
+  const submitAmount = resolveWagerAmount(amount, wagerRange);
 
   return (
     <section className={`action-panel ${seated ? "" : "is-compact"}`.trim()}>
@@ -93,18 +95,18 @@ export function ActionPanel(props: {
         <>
           {wagerAction && (
             <label className="range-label">
-              下注 / 加注额
+              本次追加筹码
               <input
                 id="bet-amount-input"
                 type="number"
-                min={wagerAction.minAmount ?? 0}
-                max={wagerAction.maxAmount ?? 0}
+                min={wagerRange.min}
+                max={wagerRange.max}
                 value={amount}
-                placeholder={`最小 ${wagerAction.minAmount ?? 0}`}
+                placeholder={`最小 ${wagerRange.min}`}
                 onChange={(event) => setAmount(event.target.value ? Number(event.target.value) : "")}
               />
               <span className="range-hint">
-                最小 {wagerAction.minAmount ?? 0}，最大 {wagerAction.maxAmount ?? 0}
+                最小 {wagerRange.min}，最大 {wagerRange.max}
               </span>
             </label>
           )}
@@ -114,9 +116,9 @@ export function ActionPanel(props: {
                 key={`${action.type}-${action.minAmount ?? 0}-${action.maxAmount ?? 0}`}
                 type="button"
                 className={`action-btn ${actionToneClass(action.type)}`}
-                onClick={() => props.onAction(createActionPayload(action, amount))}
+                onClick={() => props.onAction(createActionPayload(action, amount, selfCurrentBet))}
               >
-                {actionLabel(action)}
+                {actionLabel(action, selfCurrentBet)}
               </button>
             ))}
             {wagerAction && (
@@ -124,7 +126,7 @@ export function ActionPanel(props: {
                 key={`${wagerAction.type}-${wagerAction.minAmount ?? 0}-${wagerAction.maxAmount ?? 0}`}
                 type="button"
                 className="action-btn is-aggressive"
-                onClick={() => props.onAction(createActionPayload(wagerAction, submitAmount))}
+                onClick={() => props.onAction(createActionPayload(wagerAction, submitAmount, selfCurrentBet))}
               >
                 {wagerActionLabel(wagerAction)}
               </button>
@@ -136,12 +138,12 @@ export function ActionPanel(props: {
   );
 }
 
-function actionLabel(action: AvailableAction) {
+function actionLabel(action: AvailableAction, currentBet: number) {
   if (action.type === "call" && action.minAmount) {
     return `跟注 ${action.minAmount}`;
   }
   if (action.type === "all_in" && action.maxAmount) {
-    return `全下 ${action.maxAmount}`;
+    return `全下 ${Math.max(0, action.maxAmount - currentBet)}`;
   }
   return {
     fold: "弃牌",
@@ -153,11 +155,12 @@ function actionLabel(action: AvailableAction) {
   }[action.type];
 }
 
-function createActionPayload(action: AvailableAction, amount: number | "") {
+export function createActionPayload(action: AvailableAction, amount: number | "", currentBet: number) {
   if (action.type === "bet" || action.type === "raise") {
+    const resolvedAmount = typeof amount === "number" ? amount : getWagerRange(action, currentBet).min;
     return {
       type: action.type,
-      amount: amount || action.minAmount,
+      amount: currentBet + resolvedAmount,
     };
   }
   return { type: action.type };
@@ -174,16 +177,21 @@ function actionToneClass(actionType: AvailableAction["type"]) {
 }
 
 function wagerActionLabel(_action: AvailableAction) {
-  return "下注 / 加注";
+  return _action.type === "bet" ? "确认下注" : "确认加注";
 }
 
-function resolveWagerAmount(draft: number | "", action?: AvailableAction) {
-  if (!action) {
-    return "";
+export function getWagerRange(action: AvailableAction | undefined, currentBet: number) {
+  if (!action || (action.type !== "bet" && action.type !== "raise")) {
+    return { min: 0, max: 0 };
   }
 
-  const min = action.minAmount ?? 0;
-  const max = action.maxAmount ?? min;
+  const min = Math.max(0, (action.minAmount ?? currentBet) - currentBet);
+  const max = Math.max(min, (action.maxAmount ?? currentBet) - currentBet);
+  return { min, max };
+}
+
+export function resolveWagerAmount(draft: number | "", range: { min: number; max: number }) {
+  const { min, max } = range;
   if (typeof draft !== "number" || Number.isNaN(draft)) {
     return min;
   }

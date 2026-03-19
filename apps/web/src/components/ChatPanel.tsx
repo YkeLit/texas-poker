@@ -17,8 +17,10 @@ export function ChatPanel(props: {
         {props.messages.length === 0 && <p className="muted-copy">牌局提示和文字聊天会显示在这里。</p>}
         {props.messages.map((message) => (
           <article key={message.id} className={`chat-item chat-${message.type}`}>
-            <span className="chat-author">{message.senderNickname ?? "系统"}</span>
-            <span className="chat-content">{message.content}</span>
+            <div className="chat-item-header">
+              <span className="chat-author">{message.senderNickname ?? "系统"}</span>
+            </div>
+            <p className="chat-content">{message.content}</p>
           </article>
         ))}
       </div>
