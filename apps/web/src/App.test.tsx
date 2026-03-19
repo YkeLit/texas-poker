@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { RoomSnapshot } from "@texas-poker/shared";
-import { resolveSocketOrigin } from "./App";
+import { parseRoomConfigDraft, resolveSocketOrigin, roomConfigToDraft } from "./App";
 import { ActionPanel } from "./components/ActionPanel";
 import { CommunityBoard } from "./components/CommunityBoard";
 import { SeatRing } from "./components/SeatRing";
@@ -93,6 +93,34 @@ describe("web components", () => {
     expect(resolveSocketOrigin("http://127.0.0.1:5173")).toBe("http://127.0.0.1:3001");
     expect(resolveSocketOrigin("http://127.0.0.1:5173", "https://poker.example.com")).toBe("https://poker.example.com");
     expect(resolveSocketOrigin("https://poker.games.zyyk.fun", "https://poker.wzdl.zyyk.fun")).toBe("https://poker.games.zyyk.fun");
+  });
+
+  it("allows empty config drafts and blocks room creation until stack is filled", () => {
+    expect(
+      parseRoomConfigDraft({
+        ...roomConfigToDraft(snapshot.config),
+        startingStack: "",
+      }),
+    ).toBeNull();
+  });
+
+  it("parses a valid custom room config draft", () => {
+    expect(
+      parseRoomConfigDraft({
+        startingStack: "3500",
+        smallBlind: "25",
+        bigBlind: "50",
+        actionTimeSeconds: "18",
+        rebuyCooldownHands: "3",
+      }),
+    ).toEqual({
+      maxPlayers: 9,
+      startingStack: 3500,
+      smallBlind: 25,
+      bigBlind: 50,
+      actionTimeSeconds: 18,
+      rebuyCooldownHands: 3,
+    });
   });
 
   it("renders board and pot information", () => {

@@ -18,6 +18,14 @@ const STORAGE_KEYS = {
   roomCode: "texas-poker.roomCode",
 };
 
+interface RoomConfigDraft {
+  startingStack: string;
+  smallBlind: string;
+  bigBlind: string;
+  actionTimeSeconds: string;
+  rebuyCooldownHands: string;
+}
+
 const DEFAULT_CONFIG: RoomConfig = {
   maxPlayers: MAX_TABLE_PLAYERS,
   startingStack: 2000,
@@ -34,7 +42,7 @@ export default function App() {
   });
   const [nicknameDraft, setNicknameDraft] = useState("");
   const [roomCodeDraft, setRoomCodeDraft] = useState(() => localStorage.getItem(STORAGE_KEYS.roomCode) ?? "");
-  const [config, setConfig] = useState<RoomConfig>(DEFAULT_CONFIG);
+  const [configDraft, setConfigDraft] = useState<RoomConfigDraft>(() => roomConfigToDraft(DEFAULT_CONFIG));
   const [snapshot, setSnapshot] = useState<RoomSnapshot | null>(null);
   const [status, setStatus] = useState("输入昵称，创建房间。");
   const [error, setError] = useState<string | null>(null);
@@ -128,6 +136,8 @@ export default function App() {
     }
     return `房号 ${snapshot.roomCode} · ${snapshot.config.smallBlind}/${snapshot.config.bigBlind}`;
   }, [snapshot]);
+  const parsedConfig = useMemo(() => parseRoomConfigDraft(configDraft), [configDraft]);
+  const stackConfigured = useMemo(() => parseConfigNumber(configDraft.startingStack, 100) !== null, [configDraft.startingStack]);
 
   async function ensureSession() {
     if (session) {
@@ -200,9 +210,12 @@ export default function App() {
   async function handleCreateRoom() {
     try {
       const activeSession = await ensureSession();
+      const resolvedConfig = parsedConfig;
+      if (!resolvedConfig) {
+        throw new Error("请先填写有效的房间配置");
+      }
       const response = await createRoom(activeSession.sessionId, {
-        ...config,
-        maxPlayers: MAX_TABLE_PLAYERS,
+        ...resolvedConfig,
       });
       await connectToRoom(response.roomCode, activeSession);
     } catch (cause) {
@@ -294,8 +307,13 @@ export default function App() {
                 type="number"
                 min={100}
                 step={100}
-                value={config.startingStack}
-                onChange={(event) => setConfig((current) => ({ ...current, startingStack: Number(event.target.value) }))}
+                value={configDraft.startingStack}
+                onChange={(event) =>
+                  setConfigDraft((current) => ({
+                    ...current,
+                    startingStack: event.target.value,
+                  }))
+                }
               />
             </label>
             <div className="blind-input-row">
@@ -304,17 +322,27 @@ export default function App() {
                 <input
                   type="number"
                   min={1}
-                  value={config.smallBlind}
-                  onChange={(event) => setConfig((current) => ({ ...current, smallBlind: Number(event.target.value) }))}
+                  value={configDraft.smallBlind}
+                  onChange={(event) =>
+                    setConfigDraft((current) => ({
+                      ...current,
+                      smallBlind: event.target.value,
+                    }))
+                  }
                 />
               </label>
               <label>
                 大盲
                 <input
                   type="number"
-                  min={Math.max(1, config.smallBlind)}
-                  value={config.bigBlind}
-                  onChange={(event) => setConfig((current) => ({ ...current, bigBlind: Number(event.target.value) }))}
+                  min={Math.max(1, parseConfigNumber(configDraft.smallBlind, 1) ?? 1)}
+                  value={configDraft.bigBlind}
+                  onChange={(event) =>
+                    setConfigDraft((current) => ({
+                      ...current,
+                      bigBlind: event.target.value,
+                    }))
+                  }
                 />
               </label>
             </div>
@@ -323,8 +351,13 @@ export default function App() {
               <input
                 type="number"
                 min={5}
-                value={config.actionTimeSeconds}
-                onChange={(event) => setConfig((current) => ({ ...current, actionTimeSeconds: Number(event.target.value) }))}
+                value={configDraft.actionTimeSeconds}
+                onChange={(event) =>
+                  setConfigDraft((current) => ({
+                    ...current,
+                    actionTimeSeconds: event.target.value,
+                  }))
+                }
               />
             </label>
             <label>
@@ -332,13 +365,26 @@ export default function App() {
               <input
                 type="number"
                 min={0}
-                value={config.rebuyCooldownHands}
-                onChange={(event) => setConfig((current) => ({ ...current, rebuyCooldownHands: Number(event.target.value) }))}
+                value={configDraft.rebuyCooldownHands}
+                onChange={(event) =>
+                  setConfigDraft((current) => ({
+                    ...current,
+                    rebuyCooldownHands: event.target.value,
+                  }))
+                }
               />
             </label>
-            <button id="create-room-btn" type="button" className="primary-btn" disabled={isConnecting} onClick={handleCreateRoom}>
+            <button
+              id="create-room-btn"
+              type="button"
+              className="primary-btn"
+              disabled={isConnecting || !parsedConfig}
+              onClick={handleCreateRoom}
+            >
               创建房间
             </button>
+            {!stackConfigured && <p className="error-copy">请先填写有效的起始筹码。</p>}
+            {stackConfigured && !parsedConfig && <p className="error-copy">请检查盲注、行动时间和补充筹码局数设置。</p>}
           </article>
 
           <article className="lobby-card">
@@ -486,4 +532,62 @@ declare global {
 
 function isLocalBrowserHost(hostname: string) {
   return hostname === "127.0.0.1" || hostname === "localhost" || hostname === "::1";
+}
+
+export function roomConfigToDraft(config: RoomConfig): RoomConfigDraft {
+  return {
+    startingStack: String(config.startingStack),
+    smallBlind: String(config.smallBlind),
+    bigBlind: String(config.bigBlind),
+    actionTimeSeconds: String(config.actionTimeSeconds),
+    rebuyCooldownHands: String(config.rebuyCooldownHands),
+  };
+}
+
+export function parseRoomConfigDraft(draft: RoomConfigDraft): RoomConfig | null {
+  const startingStack = parseConfigNumber(draft.startingStack, 100);
+  const smallBlind = parseConfigNumber(draft.smallBlind, 1);
+  const bigBlind = parseConfigNumber(draft.bigBlind, 1);
+  const actionTimeSeconds = parseConfigNumber(draft.actionTimeSeconds, 5);
+  const rebuyCooldownHands = parseConfigNumber(draft.rebuyCooldownHands, 0);
+
+  if (
+    startingStack === null ||
+    smallBlind === null ||
+    bigBlind === null ||
+    actionTimeSeconds === null ||
+    rebuyCooldownHands === null
+  ) {
+    return null;
+  }
+
+  if (bigBlind < smallBlind) {
+    return null;
+  }
+
+  return {
+    maxPlayers: MAX_TABLE_PLAYERS,
+    startingStack,
+    smallBlind,
+    bigBlind,
+    actionTimeSeconds,
+    rebuyCooldownHands,
+  };
+}
+
+function parseConfigNumber(value: string, min: number) {
+  if (!value.trim()) {
+    return null;
+  }
+
+  if (!/^\d+$/.test(value.trim())) {
+    return null;
+  }
+
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < min) {
+    return null;
+  }
+
+  return parsed;
 }
