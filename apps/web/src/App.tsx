@@ -447,11 +447,15 @@ async function emitWithAck(socket: Socket, event: string, payload: unknown) {
 }
 
 export function resolveSocketOrigin(browserOrigin: string, explicitOrigin?: string) {
+  const url = new URL(browserOrigin);
+  if (!isLocalBrowserHost(url.hostname)) {
+    return url.origin;
+  }
+
   if (explicitOrigin) {
     return explicitOrigin;
   }
 
-  const url = new URL(browserOrigin);
   url.port = "3001";
   return url.origin;
 }
@@ -478,4 +482,8 @@ declare global {
       advance: (milliseconds: number) => void;
     };
   }
+}
+
+function isLocalBrowserHost(hostname: string) {
+  return hostname === "127.0.0.1" || hostname === "localhost" || hostname === "::1";
 }

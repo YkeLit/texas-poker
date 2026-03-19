@@ -92,6 +92,7 @@ describe("web components", () => {
   it("resolves the socket origin from the browser host unless explicitly overridden", () => {
     expect(resolveSocketOrigin("http://127.0.0.1:5173")).toBe("http://127.0.0.1:3001");
     expect(resolveSocketOrigin("http://127.0.0.1:5173", "https://poker.example.com")).toBe("https://poker.example.com");
+    expect(resolveSocketOrigin("https://poker.games.zyyk.fun", "https://poker.wzdl.zyyk.fun")).toBe("https://poker.games.zyyk.fun");
   });
 
   it("renders board and pot information", () => {
