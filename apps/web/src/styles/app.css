@@ -102,6 +102,12 @@ button {
   padding: 24px;
 }
 
+.identity-card {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+
 .identity-card label,
 .lobby-card label,
 .range-label {
@@ -443,6 +449,28 @@ select {
   line-height: 1.2;
 }
 
+.seat-role-row,
+.seat-revealed-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.seat-role-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 22px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(245, 158, 11, 0.16);
+  border: 1px solid rgba(245, 158, 11, 0.18);
+  color: #fde68a;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
 .seat-action-pill {
   display: inline-flex;
   align-items: center;
@@ -584,20 +612,39 @@ select {
   display: grid;
   gap: 10px;
   margin: 16px 0;
+  align-content: start;
 }
 
 .chat-item {
   display: grid;
   gap: 4px;
+  width: 100%;
+  box-sizing: border-box;
   padding: 12px;
   border-radius: 16px;
   background: rgba(15, 23, 42, 0.58);
   border: 1px solid rgba(148, 163, 184, 0.12);
 }
 
+.chat-item-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 .chat-author {
+  display: block;
   color: var(--safe);
   font-size: 0.84rem;
+}
+
+.chat-content {
+  margin: 0;
+  width: 100%;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .emoji-row,

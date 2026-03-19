@@ -11,6 +11,7 @@ export interface PersistedRoomRecord {
 export interface PersistenceAdapter {
   createGuestSession(session: GuestSession): Promise<void>;
   getGuestSession(sessionId: string): Promise<GuestSession | null>;
+  updateGuestSessionNickname(sessionId: string, nickname: string): Promise<void>;
   createRoom(roomCode: string, hostSessionId: string, config: RoomConfig): Promise<void>;
   getRoom(roomCode: string): Promise<PersistedRoomRecord | null>;
   saveChatMessage(roomCode: string, message: ChatMessage): Promise<void>;
@@ -23,6 +24,7 @@ export class NoopPersistenceAdapter implements PersistenceAdapter {
   async getGuestSession(): Promise<GuestSession | null> {
     return null;
   }
+  async updateGuestSessionNickname(): Promise<void> {}
   async createRoom(): Promise<void> {}
   async getRoom(): Promise<PersistedRoomRecord | null> {
     return null;
@@ -64,6 +66,13 @@ export class PrismaPersistenceAdapter implements PersistenceAdapter {
       resumeToken: record.resumeToken,
       createdAt: record.createdAt.toISOString(),
     };
+  }
+
+  async updateGuestSessionNickname(sessionId: string, nickname: string): Promise<void> {
+    await this.prisma.guestSession.update({
+      where: { sessionId },
+      data: { nickname },
+    });
   }
 
   async createRoom(roomCode: string, hostSessionId: string, config: RoomConfig): Promise<void> {

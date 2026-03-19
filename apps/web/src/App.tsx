@@ -7,7 +7,7 @@ import {
   type RoomConfig,
   type RoomSnapshot,
 } from "@texas-poker/shared";
-import { createGuestSession, createRoom, getRoomSummary, joinRoom, reportClientError } from "./lib/api";
+import { createGuestSession, createRoom, getRoomSummary, joinRoom, reportClientError, updateGuestSessionNickname } from "./lib/api";
 import { ActionPanel } from "./components/ActionPanel";
 import { ChatPanel } from "./components/ChatPanel";
 import { CommunityBoard } from "./components/CommunityBoard";
@@ -67,6 +67,13 @@ export default function App() {
   }, [session]);
 
   useEffect(() => {
+    if (!session) {
+      return;
+    }
+    setNicknameDraft(session.nickname);
+  }, [session?.nickname, session?.sessionId]);
+
+  useEffect(() => {
     if (snapshot?.roomCode) {
       localStorage.setItem(STORAGE_KEYS.roomCode, snapshot.roomCode);
       setRoomCodeDraft(snapshot.roomCode);
@@ -81,6 +88,8 @@ export default function App() {
         currentBet: snapshot?.currentBet ?? 0,
         board: snapshot?.board ?? [],
         yourSeatIndex: snapshot?.yourSeatIndex ?? null,
+        smallBlindSeatIndex: snapshot?.smallBlindSeatIndex ?? null,
+        bigBlindSeatIndex: snapshot?.bigBlindSeatIndex ?? null,
         actingSeatIndex: snapshot?.actingSeatIndex ?? null,
         yourActions: snapshot?.yourAvailableActions.map((action) => action.type) ?? [],
         players:
@@ -207,6 +216,32 @@ export default function App() {
     }
   }
 
+  async function handleSaveNickname() {
+    if (!session) {
+      return;
+    }
+
+    const nickname = nicknameDraft.trim();
+    if (!nickname) {
+      setError("请先输入昵称");
+      return;
+    }
+    if (nickname === session.nickname) {
+      return;
+    }
+
+    try {
+      setError(null);
+      setStatus("正在保存昵称...");
+      const updated = await updateGuestSessionNickname(session.sessionId, nickname, session.resumeToken);
+      setNicknameDraft(updated.nickname);
+      setSession(updated);
+      setStatus(`昵称已更新为 ${updated.nickname}`);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    }
+  }
+
   async function handleCreateRoom() {
     try {
       const activeSession = await ensureSession();
@@ -272,6 +307,9 @@ export default function App() {
   }
 
   function renderLobby() {
+    const trimmedNickname = nicknameDraft.trim();
+    const canSaveNickname = Boolean(session) && Boolean(trimmedNickname) && trimmedNickname !== session?.nickname;
+
     return (
       <main className="landing-shell">
         <section className="hero-card">
@@ -289,12 +327,21 @@ export default function App() {
                 id="nickname-input"
                 type="text"
                 placeholder="例如：扑克小杨"
-                value={session?.nickname ?? nicknameDraft}
-                disabled={Boolean(session)}
+                value={nicknameDraft}
                 onChange={(event) => setNicknameDraft(event.target.value)}
               />
             </label>
             {session && <p className="muted-copy">当前身份：{session.nickname}</p>}
+            {canSaveNickname && (
+              <button
+                type="button"
+                className="secondary-btn"
+                disabled={isConnecting}
+                onClick={handleSaveNickname}
+              >
+                保存昵称
+              </button>
+            )}
           </div>
         </section>
 

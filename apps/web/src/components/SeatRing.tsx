@@ -1,4 +1,5 @@
 import type { RoomSnapshot, SeatState } from "@texas-poker/shared";
+import { PlayingCard } from "./PlayingCard";
 
 export function SeatRing(props: {
   snapshot: RoomSnapshot;
@@ -33,6 +34,8 @@ function SeatNode(props: {
   const player = props.seat.player;
   const isSelf = props.room.yourSeatIndex === props.seat.seatIndex;
   const isActing = props.room.actingSeatIndex === props.seat.seatIndex;
+  const roleBadges = getSeatRoleBadges(props.room, props.seat.seatIndex);
+  const showRevealedCards = !isSelf && props.room.stage === "showdown" && Boolean(player?.revealedCards?.length);
   const countdown = props.room.actionDeadlineAt
     ? Math.max(0, Math.ceil((new Date(props.room.actionDeadlineAt).getTime() - props.currentTime) / 1000))
     : null;
@@ -50,6 +53,15 @@ function SeatNode(props: {
       </span>
       {player ? (
         <>
+          {roleBadges.length > 0 && (
+            <span className="seat-role-row">
+              {roleBadges.map((badge) => (
+                <span key={`${props.seat.seatIndex}-${badge}`} className="seat-role-pill">
+                  {badge}
+                </span>
+              ))}
+            </span>
+          )}
           <span className="seat-name">
             {player.nickname}
             {player.isHost ? " · 房主" : ""}
@@ -60,6 +72,13 @@ function SeatNode(props: {
             {isActing && countdown !== null ? ` · ${countdown}s` : ""}
           </span>
           <span className="seat-bet">{player.currentBet > 0 ? `当前下注 ${player.currentBet}` : "待命"}</span>
+          {showRevealedCards && (
+            <span className="seat-revealed-row" aria-label={`${player.nickname} 已公开底牌`}>
+              {player.revealedCards!.map((card, index) => (
+                <PlayingCard key={`${props.seat.seatIndex}-${card.rank}-${card.suit}-${index}`} card={card} compact />
+              ))}
+            </span>
+          )}
         </>
       ) : (
         <>
@@ -93,4 +112,18 @@ function labelForPlayer(status: string, ready: boolean, presence: string, rebuyR
 
 function shouldHideEmptySeats(snapshot: RoomSnapshot) {
   return snapshot.handNumber > 0 || snapshot.stage !== "waiting";
+}
+
+function getSeatRoleBadges(room: RoomSnapshot, seatIndex: number) {
+  const badges: string[] = [];
+  if (room.dealerSeatIndex === seatIndex) {
+    badges.push("庄");
+  }
+  if (room.smallBlindSeatIndex === seatIndex) {
+    badges.push("小盲");
+  }
+  if (room.bigBlindSeatIndex === seatIndex) {
+    badges.push("大盲");
+  }
+  return badges;
 }

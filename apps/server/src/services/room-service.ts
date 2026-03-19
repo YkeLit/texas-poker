@@ -155,6 +155,8 @@ export class RoomService {
       handNumber: room.engine.handNumber,
       stage: room.engine.stage,
       dealerSeatIndex: room.engine.dealerSeatIndex,
+      smallBlindSeatIndex: room.engine.smallBlindSeatIndex,
+      bigBlindSeatIndex: room.engine.bigBlindSeatIndex,
       actingSeatIndex: room.engine.actingSeatIndex,
       actionDeadlineAt: room.engine.actionDeadlineAt,
       minRaiseTo: room.engine.minRaiseTo,
@@ -181,6 +183,23 @@ export class RoomService {
     const session = await this.ensureSessionLoaded(sessionId);
     session.currentRoomCode = roomCode;
     return this.buildSnapshot(roomCode, sessionId);
+  }
+
+  async updateGuestSessionNickname(sessionId: string, resumeToken: string, nickname: string): Promise<GuestSession> {
+    const session = await this.ensureSessionLoaded(sessionId);
+    if (session.resumeToken !== resumeToken) {
+      throw new Error("Resume token is invalid");
+    }
+
+    await this.persistence.updateGuestSessionNickname(sessionId, nickname);
+    session.nickname = nickname;
+
+    return {
+      sessionId: session.sessionId,
+      nickname: session.nickname,
+      resumeToken: session.resumeToken,
+      createdAt: session.createdAt,
+    };
   }
 
   async resumeSession(roomCode: string, sessionId: string, resumeToken: string): Promise<RoomSnapshot> {
@@ -280,11 +299,12 @@ export class RoomService {
     const seatIndex = this.requireSeat(room.engine, sessionId);
     const player = room.engine.seats[seatIndex]!;
     const beforeStage = room.engine.stage;
+    const currentBetBefore = player.currentBet;
     const toCall = Math.max(0, room.engine.currentBet - player.currentBet);
     const stackBeforeAction = player.stack;
 
     applyPlayerAction(room.engine, seatIndex, action, new Date());
-    player.lastAction = formatRecentAction(action, { toCall, stackBeforeAction });
+    player.lastAction = formatRecentAction(action, { currentBetBefore, toCall, stackBeforeAction });
     await this.emitEvent(roomCode, "action.applied", { seatIndex, action });
     await this.emitEvent(roomCode, "pot.updated", { pots: room.engine.pots, currentBet: room.engine.currentBet });
 
@@ -663,7 +683,7 @@ function makeRecentAction(label: string, tone: RecentActionTone): RecentPlayerAc
 
 function formatRecentAction(
   action: PlayerActionCommand,
-  meta: { toCall: number; stackBeforeAction: number },
+  meta: { currentBetBefore: number; toCall: number; stackBeforeAction: number },
 ): RecentPlayerAction {
   switch (action.type) {
     case "check":
@@ -671,9 +691,9 @@ function formatRecentAction(
     case "call":
       return makeRecentAction(`跟注 ${Math.min(meta.toCall, meta.stackBeforeAction)}`, "safe");
     case "bet":
-      return makeRecentAction(`下注 ${action.amount ?? ""}`.trim(), "aggressive");
+      return makeRecentAction(`下注 ${Math.max(0, (action.amount ?? meta.currentBetBefore) - meta.currentBetBefore)}`, "aggressive");
     case "raise":
-      return makeRecentAction(`加注到 ${action.amount ?? ""}`.trim(), "aggressive");
+      return makeRecentAction(`加注 ${Math.max(0, (action.amount ?? meta.currentBetBefore) - meta.currentBetBefore)}`, "aggressive");
     case "all_in":
       return makeRecentAction(`全下 ${meta.stackBeforeAction}`, "aggressive");
     case "fold":
