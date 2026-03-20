@@ -11,8 +11,17 @@ export function PlayingCard(props: {
   card?: Card;
   compact?: boolean;
   variant?: "default" | "hero";
+  faceDown?: boolean;
 }) {
   const variantClass = props.variant === "hero" ? "is-hero" : "";
+
+  if (props.faceDown) {
+    return (
+      <div className={`card-tile ${props.compact ? "is-compact" : ""} ${variantClass} is-facedown`} aria-hidden="true">
+        <span className="card-back-mark" />
+      </div>
+    );
+  }
 
   if (!props.card) {
     return (

@@ -328,7 +328,35 @@ describe("web components", () => {
     expect(markup).toContain("加注 80");
   });
 
-  it("renders showdown cards only for opponents with revealed cards", () => {
+  it("does not render the initial seated action label on seat cards", () => {
+    const markup = renderToStaticMarkup(
+      <SeatRing
+        snapshot={{
+          ...snapshot,
+          seats: snapshot.seats.map((seat) =>
+            seat.seatIndex === 1 && seat.player
+              ? {
+                  ...seat,
+                  player: {
+                    ...seat.player,
+                    lastAction: {
+                      label: "已入座",
+                      tone: "neutral",
+                    },
+                  },
+                }
+              : seat,
+          ),
+        }}
+        onTakeSeat={() => undefined}
+        currentTime={Date.now()}
+      />,
+    );
+
+    expect(markup).not.toContain("已入座");
+  });
+
+  it("renders revealed opponent cards on seat cards at showdown", () => {
     const markup = renderToStaticMarkup(
       <SeatRing
         snapshot={{
@@ -354,46 +382,36 @@ describe("web components", () => {
       />,
     );
 
-    expect(markup).toContain("玩家二 已公开底牌");
     expect(markup).toContain("A♥");
     expect(markup).toContain("A♦");
   });
 
-  it("keeps hero cards visible at showdown when they come from revealed cards", () => {
+  it("renders hero cards on the self seat and facedown cards for active opponents", () => {
     const markup = renderToStaticMarkup(
-      <CommunityBoard
-        board={[
-          { rank: 10, suit: "hearts" },
-          { rank: 11, suit: "clubs" },
-          { rank: 12, suit: "spades" },
-          { rank: 13, suit: "diamonds" },
-          { rank: 14, suit: "hearts" },
-        ]}
-        yourHoleCards={[]}
-        pots={snapshot.pots}
-        seats={snapshot.seats.map((seat) =>
-          seat.seatIndex === 0 && seat.player
-            ? {
-                ...seat,
-                player: {
-                  ...seat.player,
-                  revealedCards: [
-                    { rank: 14, suit: "spades" },
-                    { rank: 13, suit: "spades" },
-                  ],
-                },
-              }
-            : seat,
-        )}
-        yourSeatIndex={0}
-        stage="showdown"
-        handNumber={snapshot.handNumber}
+      <SeatRing
+        snapshot={{
+          ...snapshot,
+          stage: "preflop",
+          seats: snapshot.seats.map((seat) =>
+            seat.seatIndex === 1 && seat.player
+              ? {
+                  ...seat,
+                  player: {
+                    ...seat.player,
+                    holeCardCount: 2,
+                  },
+                }
+              : seat,
+          ),
+        }}
+        onTakeSeat={() => undefined}
+        currentTime={Date.now()}
       />,
     );
 
-    expect(markup).toContain("你的底牌");
     expect(markup).toContain("A♠");
     expect(markup).toContain("K♠");
+    expect(markup).toContain("is-facedown");
   });
 
   it("renders dealer and blind badges on occupied seats, including heads-up dealer small blind", () => {

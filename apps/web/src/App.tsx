@@ -488,11 +488,22 @@ export default function App() {
       return null;
     }
 
+    const occupiedSeatCount = snapshot.seats.filter((seat) => seat.occupied).length;
+
     return (
-      <main className="table-shell">
-        <header className="top-bar">
-          <div>
+      <main className="table-shell premium-table-shell">
+        <header className="top-bar table-topbar">
+          <div className="table-brand-block">
+            <span className="table-brand-mark">Texas Hold&apos;em</span>
             <h1>{roomSummary}</h1>
+          </div>
+          <div className="table-meta-strip" aria-label="牌桌信息">
+            <span className="table-live-pill">LIVE</span>
+            <span className="table-meta-chip">第 {snapshot.handNumber || 0} 手</span>
+            <span className="table-meta-chip">
+              {occupiedSeatCount} / {snapshot.config.maxPlayers} 玩家
+            </span>
+            <span className="table-meta-chip">{stageToTableLabel(snapshot.stage)}</span>
           </div>
           <div className="top-actions">
             <button type="button" className="ghost-btn" onClick={handleExitRoom}>
@@ -503,6 +514,29 @@ export default function App() {
 
         <div className="table-layout">
           <div className="table-main">
+            <section className="table-arena">
+              <section className="table-stage">
+                <div className="table-stage-shell">
+                  <div className="table-felt">
+                    <div className="felt-logo" aria-hidden="true">
+                      <span>TEXAS</span>
+                      <span>HOLD&apos;EM</span>
+                    </div>
+                    <CommunityBoard
+                      board={snapshot.board}
+                      yourHoleCards={snapshot.yourHoleCards}
+                      pots={snapshot.pots}
+                      seats={snapshot.seats}
+                      yourSeatIndex={snapshot.yourSeatIndex}
+                      stage={snapshot.stage}
+                      handNumber={snapshot.handNumber}
+                    />
+                  </div>
+                  <SeatRing snapshot={snapshot} onTakeSeat={(seatIndex) => handleSeatAction("seat.take", { seatIndex })} currentTime={currentTime} />
+                </div>
+              </section>
+            </section>
+
             <ActionPanel
               snapshot={snapshot}
               onAction={(action) => handleSeatAction(action.type === "rebuy" ? "player.rebuy" : "action.submit", action.type === "rebuy" ? {} : action)}
@@ -510,26 +544,6 @@ export default function App() {
               onStartHand={() => handleSeatAction("hand.start")}
               onLeaveSeat={() => handleSeatAction("seat.leave")}
             />
-
-            <section className="table-stage">
-              <CommunityBoard
-                board={snapshot.board}
-                yourHoleCards={snapshot.yourHoleCards}
-                pots={snapshot.pots}
-                seats={snapshot.seats}
-                yourSeatIndex={snapshot.yourSeatIndex}
-                stage={snapshot.stage}
-                handNumber={snapshot.handNumber}
-              />
-            </section>
-
-            <section className="seat-panel">
-              <div className="seat-panel-header">
-                <span>座位与最近操作</span>
-                <span className="muted-copy">入座在下方，当前动作与最近操作会直接显示在座位卡片里。</span>
-              </div>
-              <SeatRing snapshot={snapshot} onTakeSeat={(seatIndex) => handleSeatAction("seat.take", { seatIndex })} currentTime={currentTime} />
-            </section>
           </div>
 
           <button type="button" className={`chat-fab ${chatDrawerOpen ? "is-open" : ""}`} onClick={handleToggleChatDrawer}>
@@ -602,6 +616,17 @@ function mergeChatMessage(snapshot: RoomSnapshot | null, message: ChatMessage) {
 
 function formatUnreadChatCount(count: number) {
   return count > 99 ? "99+" : String(count);
+}
+
+function stageToTableLabel(stage: string) {
+  return {
+    waiting: "等待开局",
+    preflop: "翻牌前",
+    flop: "翻牌",
+    turn: "转牌",
+    river: "河牌",
+    showdown: "摊牌",
+  }[stage] ?? stage;
 }
 
 declare global {

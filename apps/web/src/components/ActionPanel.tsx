@@ -18,11 +18,24 @@ export function ActionPanel(props: {
     () => availableActions.filter((action) => action.type !== "bet" && action.type !== "raise"),
     [availableActions],
   );
+  const allInAction = useMemo(
+    () => otherActions.find((action) => action.type === "all_in"),
+    [otherActions],
+  );
+  const quickActions = useMemo(
+    () => otherActions.filter((action) => action.type !== "all_in"),
+    [otherActions],
+  );
   const seated = props.snapshot.yourSeatIndex !== null && props.snapshot.yourSeatIndex !== undefined;
   const selfSeat = seated ? props.snapshot.seats[props.snapshot.yourSeatIndex!] : undefined;
   const selfPlayer = selfSeat?.player;
   const selfCurrentBet = selfPlayer?.currentBet ?? 0;
   const wagerRange = useMemo(() => getWagerRange(wagerAction, selfCurrentBet), [selfCurrentBet, wagerAction]);
+  const selfRoleBadges = useMemo(
+    () => (seated ? getSeatRoleBadges(props.snapshot, props.snapshot.yourSeatIndex!) : []),
+    [seated, props.snapshot],
+  );
+  const selfNicknameClass = selfPlayer ? nicknameLengthClass(selfPlayer.nickname) : "";
   const isHost = selfPlayer?.isHost ?? false;
   const canStart = isHost && canStartFromSnapshot(props.snapshot);
   const canShowStartControls = seated && (props.snapshot.stage === "waiting" || props.snapshot.stage === "showdown");
@@ -31,15 +44,41 @@ export function ActionPanel(props: {
   return (
     <section className={`action-panel ${seated ? "" : "is-compact"}`.trim()}>
       <div className="action-header">
-        <span>{seated ? "你的操作" : "先入座开始"}</span>
+        <div className="action-title-copy">
+          <span className="action-kicker">{seated ? "你的操作" : "先入座开始"}</span>
+          <span className="action-subtitle">
+            {seated && selfPlayer ? `筹码 ${selfPlayer.stack} · 当前下注 ${selfCurrentBet}` : "点击任意空位入座，然后准备开局。"}
+          </span>
+          {seated && selfPlayer && (
+            <div className="action-player-strip">
+              <span className="action-player-identity">
+                {props.snapshot.yourSeatIndex! + 1}号位
+                <span className={`action-player-name ${selfNicknameClass}`.trim()}>{selfPlayer.nickname}</span>
+                {selfPlayer.isHost && <HostIcon />}
+              </span>
+              <span
+                className={`action-status-dot ${actionStatusIndicatorClass(selfPlayer.status, selfPlayer.ready, selfPlayer.presence)}`}
+                title={actionPlayerStatusLabel(selfPlayer.status, selfPlayer.ready, selfPlayer.presence, selfPlayer.rebuyRemainingHands)}
+                aria-label={actionPlayerStatusLabel(selfPlayer.status, selfPlayer.ready, selfPlayer.presence, selfPlayer.rebuyRemainingHands)}
+              />
+              {selfRoleBadges.length > 0 && (
+                <span className="action-player-role-row">
+                  {selfRoleBadges.map((badge) => (
+                    <span key={`action-self-${badge}`} className="seat-role-pill">
+                      {badge}
+                    </span>
+                  ))}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
         {seated && (
           <button type="button" className="ghost-btn" onClick={props.onLeaveSeat}>
             离座
           </button>
         )}
       </div>
-
-      {!seated && <p className="muted-copy">点击任意空位入座，然后准备开局。</p>}
 
       {seated && selfPlayer?.status === "out" && (
         <div className="rebuy-panel">
@@ -58,7 +97,7 @@ export function ActionPanel(props: {
       )}
 
       {canShowStartControls && (
-        <>
+        <div className="action-start-panel">
           <div className="ready-row">
             <button
               type="button"
@@ -75,7 +114,7 @@ export function ActionPanel(props: {
             )}
           </div>
           <p className="muted-copy">所有已入座玩家都准备后，房主才可以开始发牌。</p>
-        </>
+        </div>
       )}
 
       {props.snapshot.lastResult && (
@@ -92,47 +131,59 @@ export function ActionPanel(props: {
       )}
 
       {availableActions.length > 0 && selfPlayer?.status !== "out" && (
-        <>
+        <div className="action-command-deck">
           {wagerAction && (
-            <label className="range-label">
-              本次追加筹码
-              <input
-                id="bet-amount-input"
-                type="number"
-                min={wagerRange.min}
-                max={wagerRange.max}
-                value={amount}
-                placeholder={`最小 ${wagerRange.min}`}
-                onChange={(event) => setAmount(event.target.value ? Number(event.target.value) : "")}
-              />
+            <label className="range-label action-wager-panel">
+              <span className="action-wager-label">本次追加筹码</span>
+              <div className="action-wager-input-row">
+                <input
+                  id="bet-amount-input"
+                  type="number"
+                  min={wagerRange.min}
+                  max={wagerRange.max}
+                  value={amount}
+                  placeholder={`最小 ${wagerRange.min}`}
+                  onChange={(event) => setAmount(event.target.value ? Number(event.target.value) : "")}
+                />
+                <button
+                  key={`${wagerAction.type}-${wagerAction.minAmount ?? 0}-${wagerAction.maxAmount ?? 0}`}
+                  type="button"
+                  className="action-btn is-aggressive action-btn-confirm"
+                  onClick={() => props.onAction(createActionPayload(wagerAction, submitAmount, selfCurrentBet))}
+                >
+                  {wagerActionLabel(wagerAction)}
+                </button>
+              </div>
               <span className="range-hint">
                 最小 {wagerRange.min}，最大 {wagerRange.max}
               </span>
             </label>
           )}
-          <div className="action-grid">
-            {otherActions.map((action) => (
-              <button
-                key={`${action.type}-${action.minAmount ?? 0}-${action.maxAmount ?? 0}`}
-                type="button"
-                className={`action-btn ${actionToneClass(action.type)}`}
-                onClick={() => props.onAction(createActionPayload(action, amount, selfCurrentBet))}
-              >
-                {actionLabel(action, selfCurrentBet)}
-              </button>
-            ))}
-            {wagerAction && (
-              <button
-                key={`${wagerAction.type}-${wagerAction.minAmount ?? 0}-${wagerAction.maxAmount ?? 0}`}
-                type="button"
-                className="action-btn is-aggressive"
-                onClick={() => props.onAction(createActionPayload(wagerAction, submitAmount, selfCurrentBet))}
-              >
-                {wagerActionLabel(wagerAction)}
-              </button>
-            )}
-          </div>
-        </>
+          {(quickActions.length > 0 || allInAction) && (
+            <div className="action-grid">
+              {quickActions.map((action) => (
+                <button
+                  key={`${action.type}-${action.minAmount ?? 0}-${action.maxAmount ?? 0}`}
+                  type="button"
+                  className={`action-btn ${actionToneClass(action.type)}`}
+                  onClick={() => props.onAction(createActionPayload(action, amount, selfCurrentBet))}
+                >
+                  {actionLabel(action, selfCurrentBet)}
+                </button>
+              ))}
+              {allInAction && (
+                <button
+                  key={`${allInAction.type}-${allInAction.minAmount ?? 0}-${allInAction.maxAmount ?? 0}`}
+                  type="button"
+                  className="action-btn is-aggressive"
+                  onClick={() => props.onAction(createActionPayload(allInAction, amount, selfCurrentBet))}
+                >
+                  {actionLabel(allInAction, selfCurrentBet)}
+                </button>
+              )}
+            </div>
+          )}
+        </div>
       )}
     </section>
   );
@@ -209,4 +260,71 @@ function canStartFromSnapshot(snapshot: RoomSnapshot) {
     .filter((player) => player.stack > 0 && player.status !== "sit-out" && player.status !== "out");
 
   return seatedPlayers.length >= 2 && seatedPlayers.every((player) => player.ready && player.presence === "connected");
+}
+
+function getSeatRoleBadges(room: RoomSnapshot, seatIndex: number) {
+  const badges: string[] = [];
+  if (room.dealerSeatIndex === seatIndex) {
+    badges.push("庄");
+  }
+  if (room.smallBlindSeatIndex === seatIndex) {
+    badges.push("小盲");
+  }
+  if (room.bigBlindSeatIndex === seatIndex) {
+    badges.push("大盲");
+  }
+  return badges;
+}
+
+function actionPlayerStatusLabel(status: string, ready: boolean, presence: string, rebuyRemainingHands: number) {
+  if (presence === "disconnected") {
+    return "离线";
+  }
+  if (status === "out") {
+    return rebuyRemainingHands > 0 ? `待补充 ${rebuyRemainingHands}局` : "可补充筹码";
+  }
+  if (!ready && status === "waiting") {
+    return "未准备";
+  }
+  return {
+    waiting: "待开始",
+    active: "行动中",
+    folded: "已弃牌",
+    "all-in": "已全下",
+    out: "出局",
+    "sit-out": "暂离",
+  }[status] ?? status;
+}
+
+function actionStatusIndicatorClass(status: string, ready: boolean, presence: string) {
+  if (presence === "disconnected") {
+    return "is-muted";
+  }
+  if (status === "waiting") {
+    return ready ? "is-ready" : "is-muted";
+  }
+  if (status === "active") {
+    return "is-ready";
+  }
+  return "is-muted";
+}
+
+function HostIcon() {
+  return (
+    <span className="action-host-icon" aria-label="房主" title="房主">
+      <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+        <path d="M2.5 12.5h11l-1-5-2.75 1.75L8 4.5 6.25 9.25 3.5 7.5z" />
+      </svg>
+    </span>
+  );
+}
+
+function nicknameLengthClass(nickname: string) {
+  if (nickname.length >= 16) {
+    return "is-xlong";
+  }
+  if (nickname.length >= 11) {
+    return "is-long";
+  }
+  return "";
 }

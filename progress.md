@@ -16,6 +16,8 @@ Original prompt: 我需要开发一个联机版的德州扑克
 - 2026-03-19: 昵称保存按钮已进一步收窄为“仅在大厅昵称草稿发生变更时出现”，不再常驻显示禁用态按钮；对应大厅测试已同步更新。
 - 2026-03-20: 已修复摊牌阶段自己的底牌不显示问题：服务端快照会在 `holeCards` 清空后回退到 `revealedCards`，前端公共牌区也加了 hero cards 回退逻辑。聊天抽屉新增未读消息提醒，关闭时收到他人/系统新消息会在悬浮按钮上显示计数，打开聊天后清零。对应 `web`、`server` 测试和整仓 build 均已通过。
 - 2026-03-20: 已对上述改动补做验证：`corepack pnpm --filter @texas-poker/web test`、`corepack pnpm --filter @texas-poker/server test`、`corepack pnpm build` 全部通过；真实双标签页 smoke 已确认聊天未读 badge 会在他人发言时出现并在打开聊天后清零。浏览器控制台仅剩 `favicon.ico` 404，无新的页面脚本错误。
+- 2026-03-20: 正在按参考稿重做牌桌页视觉层；`App` 已改为顶部信息栏 + 阶段条 + 椭圆桌毡 + 底部动作带结构，`CommunityBoard`、`SeatRing`、`ActionPanel` 和 `app.css` 已切到金色点缀、蓝色桌毡、环桌座位布局，业务事件与测试敏感选择器保持不变。
+- 2026-03-20: 牌桌高拟真样式已完成并验证：`corepack pnpm --filter @texas-poker/web test`、`corepack pnpm --filter @texas-poker/web build` 通过；真实浏览器 smoke 已确认桌面端/移动端的新牌桌骨架、无横向溢出、入座与准备链路可用、聊天抽屉可正常展开。过程中修复了 `currentBet === 0` 被误渲染成座位顶部文本，以及移动端聊天按钮压住操作区正文的问题。当前浏览器控制台仍有一次 `socket.io` 连接在页面切换时提前关闭的 warning，但未出现新的页面脚本错误。
 - TODO: 增加真实浏览器端到端脚本，覆盖 2-3 个浏览器上下文一起对局。
 - TODO: 为 Docker 镜像补 Prisma migrate/generate 的正式启动脚本。
 - TODO: 若要上公网，继续补鉴权加固、观战和更细的运营指标。
