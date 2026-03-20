@@ -10,6 +10,7 @@ export function CommunityBoard(props: {
   stage: string;
   handNumber: number;
 }) {
+  const heroCards = resolveHeroCards(props.seats, props.yourSeatIndex, props.yourHoleCards);
   const totalPot = props.pots.reduce((sum, pot) => sum + pot.amount, 0);
   const opponentBets = props.seats
     .filter((seat) => seat.player && seat.seatIndex !== props.yourSeatIndex && seat.player.currentBet > 0)
@@ -26,10 +27,10 @@ export function CommunityBoard(props: {
         <span>{stageLabel(props.stage)}</span>
       </div>
       <div className="merged-card-row" aria-label="牌面">
-        {props.yourHoleCards && props.yourHoleCards.length > 0 && (
+        {heroCards.length > 0 && (
           <>
             <div className="merged-card-group merged-card-group-hero" aria-label="你的底牌">
-              {props.yourHoleCards.map((card, index) => (
+              {heroCards.map((card, index) => (
                 <PlayingCard key={`${card.rank}-${card.suit}-${index}`} card={card} compact variant="hero" />
               ))}
             </div>
@@ -63,6 +64,18 @@ export function CommunityBoard(props: {
       </div>
     </section>
   );
+}
+
+function resolveHeroCards(seats: SeatState[], yourSeatIndex: number | null | undefined, yourHoleCards?: Card[]) {
+  if (yourHoleCards && yourHoleCards.length > 0) {
+    return yourHoleCards;
+  }
+
+  if (yourSeatIndex === null || yourSeatIndex === undefined) {
+    return [];
+  }
+
+  return seats[yourSeatIndex]?.player?.revealedCards ?? [];
 }
 
 function stageLabel(stage: string) {

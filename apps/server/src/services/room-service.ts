@@ -148,8 +148,13 @@ export class RoomService {
     const room = this.requireRoom(roomCode);
     const viewerSeatIndex = viewerSessionId ? getSeatBySession(room.engine, viewerSessionId) : null;
     const yourAvailableActions = viewerSeatIndex !== null ? getAvailableActions(room.engine, viewerSeatIndex) : [];
-    const yourHoleCards =
-      viewerSeatIndex !== null ? [...(room.engine.seats[viewerSeatIndex]?.holeCards ?? [])] : [];
+    const viewerCards =
+      viewerSeatIndex !== null
+        ? room.engine.seats[viewerSeatIndex]?.holeCards.length
+          ? room.engine.seats[viewerSeatIndex]?.holeCards
+          : room.engine.seats[viewerSeatIndex]?.revealedCards
+        : [];
+    const yourHoleCards = viewerSeatIndex !== null ? [...(viewerCards ?? [])] : [];
 
     return {
       roomCode,

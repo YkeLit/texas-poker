@@ -661,6 +661,9 @@ select {
   position: fixed;
   right: 24px;
   bottom: 24px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   z-index: 20;
   border: 1px solid rgba(148, 163, 184, 0.18);
   border-radius: 999px;
@@ -668,6 +671,21 @@ select {
   background: rgba(15, 23, 42, 0.92);
   color: var(--text);
   box-shadow: var(--shadow);
+}
+
+.chat-fab-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  min-height: 22px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #ef4444;
+  color: #fff1f2;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1;
 }
 
 .chat-floating {

@@ -359,6 +359,43 @@ describe("web components", () => {
     expect(markup).toContain("A♦");
   });
 
+  it("keeps hero cards visible at showdown when they come from revealed cards", () => {
+    const markup = renderToStaticMarkup(
+      <CommunityBoard
+        board={[
+          { rank: 10, suit: "hearts" },
+          { rank: 11, suit: "clubs" },
+          { rank: 12, suit: "spades" },
+          { rank: 13, suit: "diamonds" },
+          { rank: 14, suit: "hearts" },
+        ]}
+        yourHoleCards={[]}
+        pots={snapshot.pots}
+        seats={snapshot.seats.map((seat) =>
+          seat.seatIndex === 0 && seat.player
+            ? {
+                ...seat,
+                player: {
+                  ...seat.player,
+                  revealedCards: [
+                    { rank: 14, suit: "spades" },
+                    { rank: 13, suit: "spades" },
+                  ],
+                },
+              }
+            : seat,
+        )}
+        yourSeatIndex={0}
+        stage="showdown"
+        handNumber={snapshot.handNumber}
+      />,
+    );
+
+    expect(markup).toContain("你的底牌");
+    expect(markup).toContain("A♠");
+    expect(markup).toContain("K♠");
+  });
+
   it("renders dealer and blind badges on occupied seats, including heads-up dealer small blind", () => {
     const markup = renderToStaticMarkup(
       <SeatRing

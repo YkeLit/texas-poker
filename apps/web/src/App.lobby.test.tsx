@@ -204,4 +204,64 @@ describe("App lobby rename flow", () => {
     expect(container.textContent).not.toContain("保存昵称");
     expect(container.textContent).toContain(`房号 ${roomSnapshot.roomCode}`);
   });
+
+  it("shows an unread chat badge for new incoming messages and clears it when opening the drawer", async () => {
+    const listeners = new Map<string, (payload: unknown) => void>();
+
+    localStorage.setItem("texas-poker.session", JSON.stringify(session));
+    localStorage.setItem("texas-poker.roomCode", roomSnapshot.roomCode);
+
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ roomCode: roomSnapshot.roomCode, wsToken: "token", snapshot: roomSnapshot }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    mockIo.mockReturnValue({
+      on: vi.fn((event: string, handler: (payload: unknown) => void) => {
+        listeners.set(event, handler);
+      }),
+      emitWithAck: vi.fn(async (event: string) => {
+        if (event === "room.join" || event === "session.resume") {
+          return { ok: true, snapshot: roomSnapshot };
+        }
+        return { ok: true };
+      }),
+      disconnect: vi.fn(),
+    });
+
+    await act(async () => {
+      root.render(<App />);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.querySelector(".chat-fab-badge")).toBeNull();
+
+    await act(async () => {
+      listeners.get("chat.message")?.({
+        id: "msg-1",
+        type: "chat",
+        content: "有新消息",
+        createdAt: "2026-03-20T00:00:00.000Z",
+        senderSessionId: "session-2",
+        senderNickname: "玩家二",
+      });
+      await Promise.resolve();
+    });
+
+    expect(container.querySelector(".chat-fab-badge")?.textContent).toBe("1");
+
+    const chatButton = Array.from(container.querySelectorAll("button")).find((button) => button.textContent?.includes("聊天"));
+    expect(chatButton).toBeDefined();
+
+    await act(async () => {
+      chatButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(container.querySelector(".chat-fab-badge")).toBeNull();
+    expect(container.textContent).toContain("有新消息");
+  });
 });

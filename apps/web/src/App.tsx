@@ -48,9 +48,11 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
   const [chatDrawerOpen, setChatDrawerOpen] = useState(false);
+  const [unreadChatCount, setUnreadChatCount] = useState(0);
   const [clockOffset, setClockOffset] = useState(0);
   const [tick, setTick] = useState(0);
   const socketRef = useRef<Socket | null>(null);
+  const chatDrawerOpenRef = useRef(chatDrawerOpen);
 
   useEffect(() => {
     const interval = window.setInterval(() => setTick((value) => value + 1), 500);
@@ -58,6 +60,13 @@ export default function App() {
   }, []);
 
   const currentTime = Date.now() + clockOffset + tick * 0;
+
+  useEffect(() => {
+    chatDrawerOpenRef.current = chatDrawerOpen;
+    if (chatDrawerOpen) {
+      setUnreadChatCount(0);
+    }
+  }, [chatDrawerOpen]);
 
   useEffect(() => {
     if (!session) {
@@ -189,6 +198,9 @@ export default function App() {
 
       socket.on("chat.message", (message: ChatMessage) => {
         setSnapshot((current) => mergeChatMessage(current, message));
+        if (!chatDrawerOpenRef.current && message.senderSessionId !== activeSession.sessionId) {
+          setUnreadChatCount((current) => Math.min(current + 1, 99));
+        }
       });
 
       socket.on("connect_error", (event) => {
@@ -293,6 +305,7 @@ export default function App() {
 
     setError(null);
     setChatDrawerOpen(false);
+    setUnreadChatCount(0);
 
     if (socket && activeSnapshot?.yourSeatIndex !== null && activeSnapshot?.yourSeatIndex !== undefined && activeSnapshot.stage === "waiting") {
       try {
@@ -308,6 +321,16 @@ export default function App() {
     setRoomCodeDraft("");
     setSnapshot(null);
     setStatus("已退出房间。");
+  }
+
+  function handleToggleChatDrawer() {
+    setChatDrawerOpen((value) => {
+      const nextValue = !value;
+      if (nextValue) {
+        setUnreadChatCount(0);
+      }
+      return nextValue;
+    });
   }
 
   function renderLobby() {
@@ -509,8 +532,13 @@ export default function App() {
             </section>
           </div>
 
-          <button type="button" className={`chat-fab ${chatDrawerOpen ? "is-open" : ""}`} onClick={() => setChatDrawerOpen((value) => !value)}>
-            {chatDrawerOpen ? "收起聊天" : "聊天"}
+          <button type="button" className={`chat-fab ${chatDrawerOpen ? "is-open" : ""}`} onClick={handleToggleChatDrawer}>
+            <span>{chatDrawerOpen ? "收起聊天" : "聊天"}</span>
+            {!chatDrawerOpen && unreadChatCount > 0 && (
+              <span className="chat-fab-badge" aria-label={`未读消息 ${formatUnreadChatCount(unreadChatCount)} 条`}>
+                {formatUnreadChatCount(unreadChatCount)}
+              </span>
+            )}
           </button>
           <aside className={`chat-floating ${chatDrawerOpen ? "is-open" : ""}`}>
             <ChatPanel
@@ -570,6 +598,10 @@ function mergeChatMessage(snapshot: RoomSnapshot | null, message: ChatMessage) {
     ...snapshot,
     messages: [...snapshot.messages.slice(-49), message],
   };
+}
+
+function formatUnreadChatCount(count: number) {
+  return count > 99 ? "99+" : String(count);
 }
 
 declare global {

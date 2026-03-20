@@ -245,6 +245,33 @@ describe("server integration", () => {
     expect(instance.roomService.buildSnapshot(room.roomCode, guest.sessionId).seats[0]?.player?.nickname).toBe("旧昵称");
   });
 
+  it("keeps hero hole cards in the showdown snapshot via revealed cards", async () => {
+    const [host, guest] = await Promise.all([
+      instance.roomService.createGuestSession("房主"),
+      instance.roomService.createGuestSession("玩家二"),
+    ]);
+    const room = await instance.roomService.createRoom(host.sessionId, host.resumeToken, FAST_CONFIG);
+
+    await instance.roomService.takeSeat(room.roomCode, host.sessionId, 0);
+    await instance.roomService.takeSeat(room.roomCode, guest.sessionId, 1);
+    await instance.roomService.toggleReady(room.roomCode, host.sessionId, true);
+    await instance.roomService.toggleReady(room.roomCode, guest.sessionId, true);
+    await instance.roomService.startHand(room.roomCode, host.sessionId);
+
+    const roomRuntime = (instance.roomService as unknown as { rooms: Map<string, { engine: { stage: string; seats: Array<any> } }> }).rooms.get(room.roomCode)!;
+    roomRuntime.engine.stage = "showdown";
+    roomRuntime.engine.seats[0].revealedCards = [
+      { suit: "spades", rank: 14 },
+      { suit: "spades", rank: 13 },
+    ];
+    roomRuntime.engine.seats[0].holeCards = [];
+
+    expect(instance.roomService.buildSnapshot(room.roomCode, host.sessionId).yourHoleCards).toEqual([
+      { suit: "spades", rank: 14 },
+      { suit: "spades", rank: 13 },
+    ]);
+  });
+
   it("parses multiple client origins and returns CORS headers for each allowed origin", async () => {
     expect(readConfig({
       CLIENT_ORIGIN: "http://127.0.0.1:4173, https://poker.example.com",

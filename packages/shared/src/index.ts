@@ -84,6 +84,7 @@ export interface ChatMessage {
   type: ChatMessageType;
   content: string;
   createdAt: string;
+  senderSessionId?: string;
   senderNickname?: string;
 }
 

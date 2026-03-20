@@ -14,6 +14,8 @@ Original prompt: 我需要开发一个联机版的德州扑克
 - 2026-03-19: 已开始修复 6 项联机牌桌问题；共享快照准备新增大小盲座位字段，服务端已补游客会话改名接口，最近操作文案中的加注语义已改为“加注 X”。
 - 2026-03-19: 已完成本轮修复并验证：前端下注/加注输入改为“本次追加筹码”，座位卡已显示庄/小盲/大盲与摊牌公开底牌，大厅可保存昵称且不回写当前已入座昵称，聊天卡片改为按消息条目稳定铺开；`corepack pnpm --filter @texas-poker/web test`、`corepack pnpm --filter @texas-poker/server test`、`corepack pnpm --filter @texas-poker/poker-engine test` 以及 `corepack pnpm build` 均通过。真实浏览器 smoke 已确认大厅改名和聊天长消息布局正常；摊牌座位卡和大盲 limped pot 加注的真实多会话链路本轮主要由新增自动化测试覆盖。
 - 2026-03-19: 昵称保存按钮已进一步收窄为“仅在大厅昵称草稿发生变更时出现”，不再常驻显示禁用态按钮；对应大厅测试已同步更新。
+- 2026-03-20: 已修复摊牌阶段自己的底牌不显示问题：服务端快照会在 `holeCards` 清空后回退到 `revealedCards`，前端公共牌区也加了 hero cards 回退逻辑。聊天抽屉新增未读消息提醒，关闭时收到他人/系统新消息会在悬浮按钮上显示计数，打开聊天后清零。对应 `web`、`server` 测试和整仓 build 均已通过。
+- 2026-03-20: 已对上述改动补做验证：`corepack pnpm --filter @texas-poker/web test`、`corepack pnpm --filter @texas-poker/server test`、`corepack pnpm build` 全部通过；真实双标签页 smoke 已确认聊天未读 badge 会在他人发言时出现并在打开聊天后清零。浏览器控制台仅剩 `favicon.ico` 404，无新的页面脚本错误。
 - TODO: 增加真实浏览器端到端脚本，覆盖 2-3 个浏览器上下文一起对局。
 - TODO: 为 Docker 镜像补 Prisma migrate/generate 的正式启动脚本。
 - TODO: 若要上公网，继续补鉴权加固、观战和更细的运营指标。
