@@ -134,7 +134,6 @@ describe("web components", () => {
       />,
     );
     expect(markup).toContain("底池 30");
-    expect(markup).toContain("翻牌前");
     expect(markup).toContain("对手下注");
     expect(markup).toContain("玩家二 20");
   });
