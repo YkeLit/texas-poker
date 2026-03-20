@@ -444,4 +444,21 @@ describe("web components", () => {
     expect(markup).not.toContain("3号位");
     expect(markup).not.toContain("点击入座");
   });
+
+  it("shows empty seats again after the viewer leaves during a non-active stage", () => {
+    const markup = renderToStaticMarkup(
+      <SeatRing
+        snapshot={{
+          ...snapshot,
+          stage: "showdown",
+          yourSeatIndex: null,
+        }}
+        onTakeSeat={() => undefined}
+        currentTime={Date.now()}
+      />,
+    );
+
+    expect(markup).toContain("3号位");
+    expect(markup).toContain("+ 入座");
+  });
 });

@@ -127,7 +127,14 @@ function labelForPlayer(status: string, ready: boolean, presence: string, rebuyR
 }
 
 function shouldHideEmptySeats(snapshot: RoomSnapshot) {
-  return snapshot.handNumber > 0 || snapshot.stage !== "waiting";
+  const viewerSeated = snapshot.yourSeatIndex !== null && snapshot.yourSeatIndex !== undefined;
+  const handActive = snapshot.stage !== "waiting" && snapshot.stage !== "showdown";
+
+  if (handActive) {
+    return true;
+  }
+
+  return viewerSeated;
 }
 
 function getSeatRoleBadges(room: RoomSnapshot, seatIndex: number) {
