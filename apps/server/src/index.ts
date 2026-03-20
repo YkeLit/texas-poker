@@ -2,11 +2,10 @@ import { buildApp } from "./app";
 import { readConfig } from "./config";
 import { log } from "./lib/logger";
 
-const config = readConfig();
-
-const { app } = await buildApp({ config });
-
 try {
+  const config = readConfig();
+  const { app } = await buildApp({ config });
+
   await app.listen({
     host: config.host,
     port: config.port,

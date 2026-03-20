@@ -10,11 +10,16 @@ export interface AppConfig {
 const DEFAULT_CLIENT_ORIGIN = "http://127.0.0.1:5173";
 
 export function readConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
+  const tokenSecret = env.TOKEN_SECRET?.trim();
+  if (!tokenSecret) {
+    throw new Error("TOKEN_SECRET is required");
+  }
+
   return {
     host: env.HOST ?? "0.0.0.0",
     port: Number(env.PORT ?? 3001),
     clientOrigin: parseClientOrigins(env.CLIENT_ORIGIN),
-    tokenSecret: env.TOKEN_SECRET ?? "development-token-secret",
+    tokenSecret,
     databaseUrl: env.DATABASE_URL,
     redisUrl: env.REDIS_URL,
   };

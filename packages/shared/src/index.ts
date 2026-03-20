@@ -50,7 +50,6 @@ export interface RecentPlayerAction {
 }
 
 export interface PublicPlayerState {
-  sessionId: string;
   nickname: string;
   seatIndex: number;
   stack: number;
@@ -85,7 +84,6 @@ export interface ChatMessage {
   type: ChatMessageType;
   content: string;
   createdAt: string;
-  senderSessionId?: string;
   senderNickname?: string;
 }
 
@@ -105,7 +103,6 @@ export interface HandResult {
 export interface RoomSnapshot {
   roomCode: string;
   config: RoomConfig;
-  hostSessionId: string;
   handNumber: number;
   stage: TableStage;
   dealerSeatIndex: number | null;
@@ -119,7 +116,6 @@ export interface RoomSnapshot {
   pots: PotState[];
   seats: SeatState[];
   messages: ChatMessage[];
-  yourSessionId?: string;
   yourSeatIndex?: number | null;
   yourHoleCards?: Card[];
   yourAvailableActions: AvailableAction[];
@@ -171,7 +167,8 @@ export interface SocketAuthedPayload {
 }
 
 export interface ErrorReportPayload {
-  sessionId?: string;
+  sessionId: string;
+  resumeToken: string;
   roomCode?: string;
   message: string;
   stack?: string;
@@ -206,11 +203,13 @@ export const updateGuestSessionSchema = z.object({
 
 export const createRoomSchema = z.object({
   sessionId: z.string().min(1),
+  resumeToken: z.string().min(1),
   config: roomConfigSchema,
 });
 
 export const joinRoomSchema = z.object({
   sessionId: z.string().min(1),
+  resumeToken: z.string().min(1),
 });
 
 export const reconnectSchema = z.object({
@@ -234,6 +233,15 @@ export const chatMessageSchema = z.object({
 
 export const emojiMessageSchema = z.object({
   content: z.string().trim().min(1).max(8),
+});
+
+export const errorReportSchema = z.object({
+  sessionId: z.string().min(1),
+  resumeToken: z.string().min(1),
+  roomCode: z.string().trim().length(6).optional(),
+  message: z.string().trim().min(1),
+  stack: z.string().optional(),
+  metadata: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])).optional(),
 });
 
 export const blindPresetSchema = z.object({

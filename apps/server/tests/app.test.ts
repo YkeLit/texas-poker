@@ -2,8 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChatMessage, GuestSession, HandResult, RoomConfig } from "@texas-poker/shared";
 import { buildApp } from "../src/app";
 import { normalizeClientOrigins, readConfig } from "../src/config";
+import { createSignedToken } from "../src/lib/tokens";
 import { MemoryCacheAdapter } from "../src/repositories/cache";
-import type { PersistedRoomRecord, PersistenceAdapter } from "../src/repositories/persistence";
+import type { PersistedChatMessage, PersistedRoomRecord, PersistenceAdapter } from "../src/repositories/persistence";
 
 const TEST_CONFIG = {
   host: "127.0.0.1",
@@ -61,7 +62,7 @@ class InMemoryPersistenceAdapter implements PersistenceAdapter {
     return room ? { ...room, config: { ...room.config } } : null;
   }
 
-  async saveChatMessage(roomCode: string, message: ChatMessage): Promise<void> {
+  async saveChatMessage(roomCode: string, message: PersistedChatMessage): Promise<void> {
     const existing = this.chatMessages.get(roomCode) ?? [];
     this.chatMessages.set(roomCode, [...existing, { ...message }]);
   }
@@ -104,6 +105,7 @@ describe("server integration", () => {
       url: "/api/v1/rooms",
       payload: {
         sessionId: guest.sessionId,
+        resumeToken: guest.resumeToken,
         config: {
           maxPlayers: 6,
           startingStack: 1000,
@@ -119,7 +121,7 @@ describe("server integration", () => {
     const joinResponse = await instance.app.inject({
       method: "POST",
       url: `/api/v1/rooms/${room.roomCode}/join`,
-      payload: { sessionId: guest.sessionId },
+      payload: { sessionId: guest.sessionId, resumeToken: guest.resumeToken },
     });
     const joinPayload = joinResponse.json();
 
@@ -130,9 +132,79 @@ describe("server integration", () => {
     expect(joinPayload.snapshot.config.maxPlayers).toBe(9);
   });
 
+  it("requires a valid resume token before creating or joining rooms over HTTP", async () => {
+    const guest = await instance.roomService.createGuestSession("小杨");
+
+    const createRoomResponse = await instance.app.inject({
+      method: "POST",
+      url: "/api/v1/rooms",
+      payload: {
+        sessionId: guest.sessionId,
+        resumeToken: "invalid-token",
+        config: FAST_CONFIG,
+      },
+    });
+
+    expect(createRoomResponse.statusCode).toBe(400);
+    expect(createRoomResponse.json()).toMatchObject({
+      error: "Resume token is invalid",
+    });
+
+    const room = await instance.roomService.createRoom(guest.sessionId, guest.resumeToken, FAST_CONFIG);
+    const joinRoomResponse = await instance.app.inject({
+      method: "POST",
+      url: `/api/v1/rooms/${room.roomCode}/join`,
+      payload: {
+        sessionId: guest.sessionId,
+        resumeToken: "invalid-token",
+      },
+    });
+
+    expect(joinRoomResponse.statusCode).toBe(400);
+    expect(joinRoomResponse.json()).toMatchObject({
+      error: "Resume token is invalid",
+    });
+  });
+
+  it("requires an authenticated session for client error reports", async () => {
+    const guest = await instance.roomService.createGuestSession("小杨");
+
+    const rejectedResponse = await instance.app.inject({
+      method: "POST",
+      url: "/api/v1/reports/errors",
+      payload: {
+        sessionId: guest.sessionId,
+        resumeToken: "invalid-token",
+        roomCode: "ABC123",
+        message: "boom",
+      },
+    });
+
+    expect(rejectedResponse.statusCode).toBe(401);
+    expect(rejectedResponse.json()).toMatchObject({
+      error: "Resume token is invalid",
+    });
+    expect(instance.roomService.getMetrics().emittedErrors).toBe(0);
+
+    const acceptedResponse = await instance.app.inject({
+      method: "POST",
+      url: "/api/v1/reports/errors",
+      payload: {
+        sessionId: guest.sessionId,
+        resumeToken: guest.resumeToken,
+        roomCode: "ABC123",
+        message: "boom",
+      },
+    });
+
+    expect(acceptedResponse.statusCode).toBe(202);
+    expect(acceptedResponse.json()).toEqual({ accepted: true });
+    expect(instance.roomService.getMetrics().emittedErrors).toBe(1);
+  });
+
   it("updates lobby nicknames without rewriting already seated players", async () => {
     const guest = await instance.roomService.createGuestSession("旧昵称");
-    const room = await instance.roomService.createRoom(guest.sessionId, FAST_CONFIG);
+    const room = await instance.roomService.createRoom(guest.sessionId, guest.resumeToken, FAST_CONFIG);
     await instance.roomService.takeSeat(room.roomCode, guest.sessionId, 0);
 
     const renameResponse = await instance.app.inject({
@@ -167,7 +239,7 @@ describe("server integration", () => {
       instance.roomService.updateGuestSessionNickname(guest.sessionId, guest.resumeToken, "新昵称"),
     ).rejects.toThrow("nickname write failed");
 
-    const room = await instance.roomService.createRoom(guest.sessionId, FAST_CONFIG);
+    const room = await instance.roomService.createRoom(guest.sessionId, guest.resumeToken, FAST_CONFIG);
     await instance.roomService.takeSeat(room.roomCode, guest.sessionId, 0);
 
     expect(instance.roomService.buildSnapshot(room.roomCode, guest.sessionId).seats[0]?.player?.nickname).toBe("旧昵称");
@@ -176,6 +248,7 @@ describe("server integration", () => {
   it("parses multiple client origins and returns CORS headers for each allowed origin", async () => {
     expect(readConfig({
       CLIENT_ORIGIN: "http://127.0.0.1:4173, https://poker.example.com",
+      TOKEN_SECRET: "test-secret",
     }).clientOrigin).toEqual(["http://127.0.0.1:4173", "https://poker.example.com"]);
     expect(normalizeClientOrigins(["http://127.0.0.1:4173", "https://poker.example.com"])).toEqual([
       "http://127.0.0.1:4173",
@@ -205,13 +278,17 @@ describe("server integration", () => {
     }
   });
 
+  it("requires TOKEN_SECRET when loading runtime config", () => {
+    expect(() => readConfig({})).toThrow("TOKEN_SECRET is required");
+  });
+
   it("rejects out-of-turn actions and prevents a third player from taking an occupied seat", async () => {
     const [host, guest, third] = await Promise.all([
       instance.roomService.createGuestSession("房主"),
       instance.roomService.createGuestSession("跟注手"),
       instance.roomService.createGuestSession("第三人"),
     ]);
-    const room = await instance.roomService.createRoom(host.sessionId, FAST_CONFIG);
+    const room = await instance.roomService.createRoom(host.sessionId, host.resumeToken, FAST_CONFIG);
 
     await instance.roomService.takeSeat(room.roomCode, host.sessionId, 0);
     await instance.roomService.takeSeat(room.roomCode, guest.sessionId, 1);
@@ -231,7 +308,7 @@ describe("server integration", () => {
       instance.roomService.createGuestSession("玩家二"),
       instance.roomService.createGuestSession("玩家三"),
     ]);
-    const room = await instance.roomService.createRoom(host.sessionId, FAST_CONFIG);
+    const room = await instance.roomService.createRoom(host.sessionId, host.resumeToken, FAST_CONFIG);
 
     await instance.roomService.takeSeat(room.roomCode, host.sessionId, 0);
     await instance.roomService.takeSeat(room.roomCode, guest.sessionId, 1);
@@ -255,7 +332,7 @@ describe("server integration", () => {
       instance.roomService.createGuestSession("房主"),
       instance.roomService.createGuestSession("玩家二"),
     ]);
-    const room = await instance.roomService.createRoom(host.sessionId, FAST_CONFIG);
+    const room = await instance.roomService.createRoom(host.sessionId, host.resumeToken, FAST_CONFIG);
 
     await instance.roomService.takeSeat(room.roomCode, host.sessionId, 0);
     await instance.roomService.takeSeat(room.roomCode, guest.sessionId, 1);
@@ -269,6 +346,8 @@ describe("server integration", () => {
       label: "跟注 10",
       tone: "safe",
     });
+    expect(snapshot.seats[0]?.player).not.toHaveProperty("sessionId");
+    expect(snapshot).not.toHaveProperty("yourSessionId");
   });
 
   it("formats raise actions as additive chip amounts", async () => {
@@ -277,7 +356,7 @@ describe("server integration", () => {
       instance.roomService.createGuestSession("玩家二"),
       instance.roomService.createGuestSession("玩家三"),
     ]);
-    const room = await instance.roomService.createRoom(host.sessionId, {
+    const room = await instance.roomService.createRoom(host.sessionId, host.resumeToken, {
       ...FAST_CONFIG,
       maxPlayers: 3,
     });
@@ -303,7 +382,7 @@ describe("server integration", () => {
       instance.roomService.createGuestSession("房主"),
       instance.roomService.createGuestSession("断线玩家"),
     ]);
-    const room = await instance.roomService.createRoom(host.sessionId, FAST_CONFIG);
+    const room = await instance.roomService.createRoom(host.sessionId, host.resumeToken, FAST_CONFIG);
 
     await instance.roomService.takeSeat(room.roomCode, host.sessionId, 0);
     await instance.roomService.takeSeat(room.roomCode, guest.sessionId, 1);
@@ -321,6 +400,55 @@ describe("server integration", () => {
     expect(resumed.seats[1]?.player?.presence).toBe("connected");
   });
 
+  it("does not attach room access when session resume fails", async () => {
+    const host = await instance.roomService.createGuestSession("房主");
+    const room = await instance.roomService.createRoom(host.sessionId, host.resumeToken, FAST_CONFIG);
+    await instance.roomService.takeSeat(room.roomCode, host.sessionId, 0);
+
+    const handlers = new Map<string, (...args: any[]) => unknown>();
+    const fakeSocket = {
+      data: {} as Record<string, unknown>,
+      emit: vi.fn(),
+      id: "socket-1",
+      join: vi.fn(),
+      leave: vi.fn(async () => undefined),
+      on: vi.fn((event: string, handler: (...args: any[]) => unknown) => {
+        handlers.set(event, handler);
+      }),
+    };
+
+    const connectionHandler = instance.io.of("/").listeners("connection")[0] as ((socket: typeof fakeSocket) => void) | undefined;
+    expect(connectionHandler).toBeTypeOf("function");
+    connectionHandler?.(fakeSocket);
+
+    let resumeResponse: { ok: boolean; error?: string } | undefined;
+    await handlers.get("session.resume")?.(
+      {
+        roomCode: room.roomCode,
+        sessionId: host.sessionId,
+        resumeToken: "invalid-token",
+      },
+      (payload: { ok: boolean; error?: string }) => {
+        resumeResponse = payload;
+      },
+    );
+
+    expect(resumeResponse).toEqual({
+      ok: false,
+      error: "Resume token is invalid",
+    });
+    expect(fakeSocket.join).not.toHaveBeenCalled();
+    expect(instance.roomService.getMetrics().activeConnections).toBe(0);
+
+    let readyResponse: { ok: boolean; error?: string } | undefined;
+    await handlers.get("player.ready")?.({}, (payload: { ok: boolean; error?: string }) => {
+      readyResponse = payload;
+    });
+
+    expect(readyResponse?.ok).toBe(false);
+    expect(instance.roomService.buildSnapshot(room.roomCode, host.sessionId).seats[0]?.player?.ready).toBe(false);
+  });
+
   it("does not auto-start the next hand after showdown", async () => {
     vi.useFakeTimers();
     try {
@@ -328,7 +456,7 @@ describe("server integration", () => {
         instance.roomService.createGuestSession("房主"),
         instance.roomService.createGuestSession("玩家二"),
       ]);
-      const room = await instance.roomService.createRoom(host.sessionId, FAST_CONFIG);
+      const room = await instance.roomService.createRoom(host.sessionId, host.resumeToken, FAST_CONFIG);
 
       await instance.roomService.takeSeat(room.roomCode, host.sessionId, 0);
       await instance.roomService.takeSeat(room.roomCode, guest.sessionId, 1);
@@ -353,7 +481,7 @@ describe("server integration", () => {
       instance.roomService.createGuestSession("玩家二"),
       instance.roomService.createGuestSession("玩家三"),
     ]);
-    const room = await instance.roomService.createRoom(host.sessionId, {
+    const room = await instance.roomService.createRoom(host.sessionId, host.resumeToken, {
       ...FAST_CONFIG,
       maxPlayers: 3,
     });
@@ -409,7 +537,7 @@ describe("server integration", () => {
       instance.roomService.createGuestSession("房主"),
       instance.roomService.createGuestSession("接手玩家"),
     ]);
-    const room = await instance.roomService.createRoom(host.sessionId, FAST_CONFIG);
+    const room = await instance.roomService.createRoom(host.sessionId, host.resumeToken, FAST_CONFIG);
 
     await instance.roomService.takeSeat(room.roomCode, host.sessionId, 0);
     await instance.roomService.takeSeat(room.roomCode, guest.sessionId, 1);
@@ -417,6 +545,7 @@ describe("server integration", () => {
     await expect(instance.roomService.sendChat(room.roomCode, host.sessionId, "again")).rejects.toThrow(
       "Messages are being sent too quickly",
     );
+    expect(instance.roomService.buildSnapshot(room.roomCode, guest.sessionId).messages[0]).not.toHaveProperty("senderSessionId");
 
     await instance.roomService.leaveSeat(room.roomCode, host.sessionId);
     const roomAfterTransfer = instance.roomService.buildSnapshot(room.roomCode, guest.sessionId);
@@ -429,21 +558,18 @@ describe("server integration", () => {
       instance.roomService.createGuestSession("新房主"),
       instance.roomService.createGuestSession("跟注手"),
     ]);
-    const room = await instance.roomService.createRoom(host.sessionId, FAST_CONFIG);
+    const room = await instance.roomService.createRoom(host.sessionId, host.resumeToken, FAST_CONFIG);
 
     await instance.roomService.takeSeat(room.roomCode, host.sessionId, 0);
     await instance.roomService.leaveSeat(room.roomCode, host.sessionId);
 
     const hostlessSnapshot = instance.roomService.buildSnapshot(room.roomCode, newHost.sessionId);
-    expect(hostlessSnapshot.hostSessionId).toBe("");
-
     await instance.roomService.takeSeat(room.roomCode, newHost.sessionId, 0);
     await instance.roomService.takeSeat(room.roomCode, guest.sessionId, 1);
     await instance.roomService.toggleReady(room.roomCode, newHost.sessionId, true);
     await instance.roomService.toggleReady(room.roomCode, guest.sessionId, true);
 
     const reassignedSnapshot = instance.roomService.buildSnapshot(room.roomCode, newHost.sessionId);
-    expect(reassignedSnapshot.hostSessionId).toBe(newHost.sessionId);
     expect(reassignedSnapshot.seats[0]?.player?.isHost).toBe(true);
 
     await expect(instance.roomService.startHand(room.roomCode, newHost.sessionId)).resolves.toMatchObject({
@@ -451,6 +577,90 @@ describe("server integration", () => {
       handNumber: 1,
       yourSeatIndex: 0,
     });
+  });
+
+  it("restores the persisted host when reloading a room without cached state", async () => {
+    await instance.close();
+
+    const persistence = new InMemoryPersistenceAdapter();
+    instance = await buildApp({ config: TEST_CONFIG, persistence, cache: new MemoryCacheAdapter() });
+
+    const [host, guest] = await Promise.all([
+      instance.roomService.createGuestSession("房主"),
+      instance.roomService.createGuestSession("玩家二"),
+    ]);
+    const room = await instance.roomService.createRoom(host.sessionId, host.resumeToken, FAST_CONFIG);
+
+    await instance.close();
+    instance = await buildApp({ config: TEST_CONFIG, persistence, cache: new MemoryCacheAdapter() });
+
+    await instance.roomService.takeSeat(room.roomCode, guest.sessionId, 0);
+    await expect(instance.roomService.startHand(room.roomCode, guest.sessionId)).rejects.toThrow(
+      "Only the host can start the first hand",
+    );
+
+    await instance.roomService.takeSeat(room.roomCode, host.sessionId, 1);
+    const snapshot = instance.roomService.buildSnapshot(room.roomCode, host.sessionId);
+    expect(snapshot.seats[0]?.player?.isHost).toBe(false);
+    expect(snapshot.seats[1]?.player?.isHost).toBe(true);
+  });
+
+  it("cleans up the old room and session when a socket re-authenticates", async () => {
+    const [host, guest] = await Promise.all([
+      instance.roomService.createGuestSession("房主"),
+      instance.roomService.createGuestSession("玩家二"),
+    ]);
+    const roomA = await instance.roomService.createRoom(host.sessionId, host.resumeToken, FAST_CONFIG);
+    const roomB = await instance.roomService.createRoom(guest.sessionId, guest.resumeToken, FAST_CONFIG);
+    await instance.roomService.takeSeat(roomA.roomCode, host.sessionId, 0);
+
+    const handlers = new Map<string, (...args: any[]) => unknown>();
+    const fakeSocket = {
+      data: {} as Record<string, unknown>,
+      emit: vi.fn(),
+      id: "socket-1",
+      join: vi.fn(),
+      leave: vi.fn(async () => undefined),
+      on: vi.fn((event: string, handler: (...args: any[]) => unknown) => {
+        handlers.set(event, handler);
+      }),
+    };
+
+    const connectionHandler = instance.io.of("/").listeners("connection")[0] as ((socket: typeof fakeSocket) => void) | undefined;
+    expect(connectionHandler).toBeTypeOf("function");
+    connectionHandler?.(fakeSocket);
+
+    let firstJoinResponse: { ok: boolean; error?: string } | undefined;
+    await handlers.get("room.join")?.(
+      {
+        roomCode: roomA.roomCode,
+        sessionId: host.sessionId,
+        token: createSignedToken({ roomCode: roomA.roomCode, sessionId: host.sessionId, type: "room" }, TEST_CONFIG.tokenSecret),
+      },
+      (payload: { ok: boolean; error?: string }) => {
+        firstJoinResponse = payload;
+      },
+    );
+
+    expect(firstJoinResponse?.ok).toBe(true);
+    expect(instance.roomService.getMetrics().activeConnections).toBe(1);
+
+    let secondJoinResponse: { ok: boolean; error?: string } | undefined;
+    await handlers.get("room.join")?.(
+      {
+        roomCode: roomB.roomCode,
+        sessionId: guest.sessionId,
+        token: createSignedToken({ roomCode: roomB.roomCode, sessionId: guest.sessionId, type: "room" }, TEST_CONFIG.tokenSecret),
+      },
+      (payload: { ok: boolean; error?: string }) => {
+        secondJoinResponse = payload;
+      },
+    );
+
+    expect(secondJoinResponse?.ok).toBe(true);
+    expect(fakeSocket.leave).toHaveBeenCalledWith(roomA.roomCode);
+    expect(instance.roomService.getMetrics().activeConnections).toBe(1);
+    expect(instance.roomService.buildSnapshot(roomA.roomCode, host.sessionId).seats[0]?.player?.presence).toBe("disconnected");
   });
 
   it("restores room state and guest sessions after a service restart", async () => {
@@ -464,7 +674,7 @@ describe("server integration", () => {
       instance.roomService.createGuestSession("房主"),
       instance.roomService.createGuestSession("断线玩家"),
     ]);
-    const room = await instance.roomService.createRoom(host.sessionId, FAST_CONFIG);
+    const room = await instance.roomService.createRoom(host.sessionId, host.resumeToken, FAST_CONFIG);
 
     await instance.roomService.takeSeat(room.roomCode, host.sessionId, 0);
     await instance.roomService.takeSeat(room.roomCode, guest.sessionId, 1);
@@ -477,7 +687,7 @@ describe("server integration", () => {
     expect(summary.seatedPlayers).toBe(2);
     expect(summary.connectedPlayers).toBe(1);
 
-    const joined = await instance.roomService.joinRoom(room.roomCode, host.sessionId);
+    const joined = await instance.roomService.joinRoom(room.roomCode, host.sessionId, host.resumeToken);
     expect(joined.snapshot.seats[0]?.player?.nickname).toBe("房主");
 
     const resumed = await instance.roomService.resumeSession(room.roomCode, guest.sessionId, guest.resumeToken);

@@ -16,7 +16,6 @@ const snapshot: RoomSnapshot = {
     actionTimeSeconds: 15,
     rebuyCooldownHands: 2,
   },
-  hostSessionId: "host",
   handNumber: 1,
   stage: "preflop",
   dealerSeatIndex: 0,
@@ -33,7 +32,6 @@ const snapshot: RoomSnapshot = {
       seatIndex: 0,
       occupied: true,
       player: {
-        sessionId: "host",
         nickname: "房主",
         seatIndex: 0,
         stack: 990,
@@ -54,7 +52,6 @@ const snapshot: RoomSnapshot = {
       seatIndex: 1,
       occupied: true,
       player: {
-        sessionId: "guest",
         nickname: "玩家二",
         seatIndex: 1,
         stack: 980,
@@ -77,7 +74,6 @@ const snapshot: RoomSnapshot = {
     { seatIndex: 5, occupied: false },
   ],
   messages: [],
-  yourSessionId: "host",
   yourSeatIndex: 0,
   yourHoleCards: [
     { rank: 14, suit: "spades" },
@@ -167,7 +163,6 @@ describe("web components", () => {
         snapshot={{
           ...snapshot,
           actingSeatIndex: 1,
-          yourSessionId: "guest",
           yourSeatIndex: 1,
           yourHoleCards: [
             { rank: 9, suit: "clubs" },
@@ -220,7 +215,6 @@ describe("web components", () => {
           seatIndex: 2,
           occupied: true,
           player: {
-            sessionId: "guest-2",
             nickname: "玩家三",
             seatIndex: 2,
             stack: 1000,

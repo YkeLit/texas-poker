@@ -21,6 +21,7 @@
 
 ```bash
 COREPACK_HOME=/tmp/corepack corepack pnpm install
+export TOKEN_SECRET=dev-only-long-random-secret
 COREPACK_HOME=/tmp/corepack corepack pnpm --filter @texas-poker/server dev
 COREPACK_HOME=/tmp/corepack corepack pnpm --filter @texas-poker/web dev
 ```
@@ -37,6 +38,7 @@ COREPACK_HOME=/tmp/corepack corepack pnpm build
 ## Docker Compose
 
 ```bash
+cp .env.example .env
 docker compose up -d
 ```
 
@@ -59,6 +61,14 @@ export TEXAS_POKER_SERVER_IMAGE=ghcr.io/ykelit/texas-poker-server:main
 export TEXAS_POKER_WEB_IMAGE=ghcr.io/ykelit/texas-poker-web:main
 docker compose up -d
 ```
+
+在启动 compose 前，需要先提供这些必填密钥：
+
+- `TOKEN_SECRET`：服务端 websocket token 的签名密钥
+- `POSTGRES_PASSWORD`：PostgreSQL 密码
+- `REDIS_PASSWORD`：Redis 访问密码
+
+`postgres` 和 `redis` 默认只保留在 compose 内部网络，不再直接映射到宿主机端口；如果你需要临时排查，可以使用 `docker compose exec postgres psql ...` 或 `docker compose exec redis redis-cli -a "$REDIS_PASSWORD"`。
 
 服务端容器会在启动时自动执行 `prisma db push --skip-generate`，因此首次连到一块全新的 PostgreSQL 卷时也会自动建表。
 

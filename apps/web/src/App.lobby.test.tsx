@@ -31,7 +31,6 @@ const roomSnapshot: RoomSnapshot = {
     actionTimeSeconds: 15,
     rebuyCooldownHands: 2,
   },
-  hostSessionId: session.sessionId,
   handNumber: 1,
   stage: "preflop",
   dealerSeatIndex: 0,
@@ -48,7 +47,6 @@ const roomSnapshot: RoomSnapshot = {
       seatIndex: 0,
       occupied: true,
       player: {
-        sessionId: session.sessionId,
         nickname: session.nickname,
         seatIndex: 0,
         stack: 990,
@@ -69,7 +67,6 @@ const roomSnapshot: RoomSnapshot = {
       seatIndex: 1,
       occupied: true,
       player: {
-        sessionId: "session-2",
         nickname: "玩家二",
         seatIndex: 1,
         stack: 980,
@@ -88,7 +85,6 @@ const roomSnapshot: RoomSnapshot = {
     },
   ],
   messages: [],
-  yourSessionId: session.sessionId,
   yourSeatIndex: 0,
   yourHoleCards: [
     { rank: 14, suit: "spades" },
@@ -197,6 +193,13 @@ describe("App lobby rename flow", () => {
       await Promise.resolve();
     });
 
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/v1/rooms/${roomSnapshot.roomCode}/join`,
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ sessionId: session.sessionId, resumeToken: session.resumeToken }),
+      }),
+    );
     expect(container.querySelector("#nickname-input")).toBeNull();
     expect(container.textContent).not.toContain("保存昵称");
     expect(container.textContent).toContain(`房号 ${roomSnapshot.roomCode}`);

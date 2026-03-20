@@ -8,13 +8,17 @@ export interface PersistedRoomRecord {
   createdAt: string;
 }
 
+export interface PersistedChatMessage extends ChatMessage {
+  senderSessionId?: string;
+}
+
 export interface PersistenceAdapter {
   createGuestSession(session: GuestSession): Promise<void>;
   getGuestSession(sessionId: string): Promise<GuestSession | null>;
   updateGuestSessionNickname(sessionId: string, nickname: string): Promise<void>;
   createRoom(roomCode: string, hostSessionId: string, config: RoomConfig): Promise<void>;
   getRoom(roomCode: string): Promise<PersistedRoomRecord | null>;
-  saveChatMessage(roomCode: string, message: ChatMessage): Promise<void>;
+  saveChatMessage(roomCode: string, message: PersistedChatMessage): Promise<void>;
   saveHandResult(roomCode: string, handResult: HandResult): Promise<void>;
   close(): Promise<void>;
 }
@@ -122,7 +126,7 @@ export class PrismaPersistenceAdapter implements PersistenceAdapter {
     };
   }
 
-  async saveChatMessage(roomCode: string, message: ChatMessage): Promise<void> {
+  async saveChatMessage(roomCode: string, message: PersistedChatMessage): Promise<void> {
     await this.prisma.chatLog.create({
       data: {
         roomCode,

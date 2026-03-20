@@ -6,6 +6,7 @@ import {
   createGuestSessionSchema,
   createRoomSchema,
   emojiMessageSchema,
+  errorReportSchema,
   joinRoomSchema,
   playerActionSchema,
   reconnectSchema,
@@ -123,7 +124,7 @@ export async function buildApp(options: BuildAppOptions = {}) {
     }
 
     try {
-      const response = await roomService.createRoom(parsed.data.sessionId, parsed.data.config);
+      const response = await roomService.createRoom(parsed.data.sessionId, parsed.data.resumeToken, parsed.data.config);
       return reply.code(201).send(response);
     } catch (error) {
       return reply.code(400).send({ error: toErrorMessage(error) });
@@ -147,7 +148,7 @@ export async function buildApp(options: BuildAppOptions = {}) {
     }
 
     try {
-      const response = await roomService.joinRoom(roomCode, parsed.data.sessionId);
+      const response = await roomService.joinRoom(roomCode, parsed.data.sessionId, parsed.data.resumeToken);
       response.wsToken = createSignedToken(
         {
           roomCode,
@@ -163,26 +164,24 @@ export async function buildApp(options: BuildAppOptions = {}) {
   });
 
   app.post("/api/v1/reports/errors", async (request, reply) => {
-    const payload = request.body as {
-      sessionId?: string;
-      roomCode?: string;
-      message?: string;
-      stack?: string;
-      metadata?: Record<string, string | number | boolean | null>;
-    };
-
-    if (!payload?.message) {
-      return reply.code(400).send({ error: "message is required" });
+    const parsed = errorReportSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.flatten() });
     }
 
-    await roomService.reportClientError({
-      sessionId: payload.sessionId,
-      roomCode: payload.roomCode,
-      message: payload.message,
-      stack: payload.stack,
-      metadata: payload.metadata,
-    });
-    return reply.code(202).send({ accepted: true });
+    try {
+      await roomService.authenticateSession(parsed.data.sessionId, parsed.data.resumeToken);
+      await roomService.reportClientError({
+        sessionId: parsed.data.sessionId,
+        roomCode: parsed.data.roomCode,
+        message: parsed.data.message,
+        stack: parsed.data.stack,
+        metadata: parsed.data.metadata,
+      });
+      return reply.code(202).send({ accepted: true });
+    } catch (error) {
+      return reply.code(401).send({ error: toErrorMessage(error) });
+    }
   });
 
   io.on("connection", (socket) => {
@@ -193,12 +192,8 @@ export async function buildApp(options: BuildAppOptions = {}) {
           throw new Error("Socket token does not match room join payload");
         }
 
-        socket.data.sessionId = payload.sessionId;
-        socket.data.roomCode = payload.roomCode;
-        socket.join(payload.roomCode);
-        registerSessionConnection(sessionConnections, metrics, payload.sessionId, socket.id);
-
         const snapshot = await roomService.handleRoomJoin(payload.roomCode, payload.sessionId);
+        await attachSocketSession(socket, sessionConnections, metrics, roomService, payload.roomCode, payload.sessionId);
         socket.emit("room.snapshot", snapshot);
         ack?.({ ok: true, snapshot });
       } catch (error) {
@@ -214,11 +209,8 @@ export async function buildApp(options: BuildAppOptions = {}) {
       }
 
       try {
-        socket.data.sessionId = parsed.data.sessionId;
-        socket.data.roomCode = parsed.data.roomCode;
-        socket.join(parsed.data.roomCode);
-        registerSessionConnection(sessionConnections, metrics, parsed.data.sessionId, socket.id);
         const snapshot = await roomService.resumeSession(parsed.data.roomCode, parsed.data.sessionId, parsed.data.resumeToken);
+        await attachSocketSession(socket, sessionConnections, metrics, roomService, parsed.data.roomCode, parsed.data.sessionId);
         socket.emit("room.snapshot", snapshot);
         ack?.({ ok: true, snapshot });
       } catch (error) {
@@ -290,7 +282,7 @@ export async function buildApp(options: BuildAppOptions = {}) {
 
       const stillConnected = unregisterSessionConnection(sessionConnections, metrics, sessionId, socket.id);
       if (!stillConnected) {
-        await roomService.markDisconnected(sessionId);
+        await roomService.markDisconnected(sessionId, socket.data.roomCode as string | undefined);
       }
     });
   });
@@ -356,6 +348,38 @@ function registerSessionConnection(
   existing.add(socketId);
   sessionConnections.set(sessionId, existing);
   metrics.setActiveConnections([...sessionConnections.values()].reduce((sum, ids) => sum + ids.size, 0));
+}
+
+async function attachSocketSession(
+  socket: { data: Record<string, unknown>; id: string; join: (room: string) => void; leave: (room: string) => void | Promise<void> },
+  sessionConnections: Map<string, Set<string>>,
+  metrics: MetricsTracker,
+  roomService: RoomService,
+  roomCode: string,
+  sessionId: string,
+): Promise<void> {
+  const previousSessionId = typeof socket.data.sessionId === "string" ? socket.data.sessionId : undefined;
+  const previousRoomCode = typeof socket.data.roomCode === "string" ? socket.data.roomCode : undefined;
+
+  if (previousSessionId === sessionId && previousRoomCode === roomCode) {
+    return;
+  }
+
+  if (previousRoomCode) {
+    await socket.leave(previousRoomCode);
+  }
+
+  if (previousSessionId) {
+    const stillConnected = unregisterSessionConnection(sessionConnections, metrics, previousSessionId, socket.id);
+    if (!stillConnected) {
+      await roomService.markDisconnected(previousSessionId, previousRoomCode);
+    }
+  }
+
+  socket.data.sessionId = sessionId;
+  socket.data.roomCode = roomCode;
+  socket.join(roomCode);
+  registerSessionConnection(sessionConnections, metrics, sessionId, socket.id);
 }
 
 function unregisterSessionConnection(

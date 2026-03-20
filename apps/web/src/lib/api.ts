@@ -1,5 +1,6 @@
 import type {
   CreateRoomResponse,
+  ErrorReportPayload,
   GuestSession,
   JoinRoomResponse,
   RoomConfig,
@@ -35,19 +36,19 @@ export function updateGuestSessionNickname(sessionId: string, nickname: string, 
   });
 }
 
-export function createRoom(sessionId: string, config: RoomConfig) {
+export function createRoom(sessionId: string, resumeToken: string, config: RoomConfig) {
   return requestJson<CreateRoomResponse>("/api/v1/rooms", {
     method: "POST",
     headers: JSON_HEADERS,
-    body: JSON.stringify({ sessionId, config }),
+    body: JSON.stringify({ sessionId, resumeToken, config }),
   });
 }
 
-export function joinRoom(roomCode: string, sessionId: string) {
+export function joinRoom(roomCode: string, sessionId: string, resumeToken: string) {
   return requestJson<JoinRoomResponse>(`/api/v1/rooms/${roomCode}/join`, {
     method: "POST",
     headers: JSON_HEADERS,
-    body: JSON.stringify({ sessionId }),
+    body: JSON.stringify({ sessionId, resumeToken }),
   });
 }
 
@@ -55,13 +56,7 @@ export function getRoomSummary(roomCode: string) {
   return requestJson<RoomSummary>(`/api/v1/rooms/${roomCode}`);
 }
 
-export function reportClientError(payload: {
-  sessionId?: string;
-  roomCode?: string;
-  message: string;
-  stack?: string;
-  metadata?: Record<string, string | number | boolean | null>;
-}) {
+export function reportClientError(payload: ErrorReportPayload) {
   return requestJson<{ accepted: boolean }>("/api/v1/reports/errors", {
     method: "POST",
     headers: JSON_HEADERS,

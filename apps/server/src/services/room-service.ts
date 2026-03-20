@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID } from "node:crypto";
+import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import {
   CHAT_THROTTLE_MS,
   EMOJI_THROTTLE_MS,
@@ -33,7 +33,8 @@ import {
   type PokerEngineState,
 } from "@texas-poker/poker-engine";
 import type { CacheAdapter, CachedRoomState } from "../repositories/cache";
-import type { PersistenceAdapter } from "../repositories/persistence";
+import type { PersistedChatMessage, PersistenceAdapter } from "../repositories/persistence";
+import { log } from "../lib/logger";
 import type { MetricsTracker } from "../lib/metrics";
 
 export interface RoomServiceHooks {
@@ -81,8 +82,9 @@ export class RoomService {
     return session;
   }
 
-  async createRoom(sessionId: string, config: RoomConfig): Promise<CreateRoomResponse> {
+  async createRoom(sessionId: string, resumeToken: string, config: RoomConfig): Promise<CreateRoomResponse> {
     const session = await this.ensureSessionLoaded(sessionId);
+    this.assertSessionResumeToken(session, resumeToken);
     const normalizedConfig: RoomConfig = {
       ...config,
       maxPlayers: MAX_TABLE_PLAYERS,
@@ -129,9 +131,10 @@ export class RoomService {
     };
   }
 
-  async joinRoom(roomCode: string, sessionId: string): Promise<JoinRoomResponse> {
+  async joinRoom(roomCode: string, sessionId: string, resumeToken: string): Promise<JoinRoomResponse> {
     await this.ensureRoomLoaded(roomCode);
     const session = await this.ensureSessionLoaded(sessionId);
+    this.assertSessionResumeToken(session, resumeToken);
     session.currentRoomCode = roomCode;
     await this.cache.saveResumeToken(sessionId, roomCode, session.resumeToken);
     return {
@@ -151,7 +154,6 @@ export class RoomService {
     return {
       roomCode,
       config: room.engine.config,
-      hostSessionId: room.hostSessionId,
       handNumber: room.engine.handNumber,
       stage: room.engine.stage,
       dealerSeatIndex: room.engine.dealerSeatIndex,
@@ -169,7 +171,6 @@ export class RoomService {
         occupied: Boolean(player),
         player: player ? this.toPublicPlayer(room.engine, player) : undefined,
       })),
-      yourSessionId: viewerSessionId,
       yourSeatIndex: viewerSeatIndex,
       yourHoleCards,
       yourAvailableActions,
@@ -187,9 +188,7 @@ export class RoomService {
 
   async updateGuestSessionNickname(sessionId: string, resumeToken: string, nickname: string): Promise<GuestSession> {
     const session = await this.ensureSessionLoaded(sessionId);
-    if (session.resumeToken !== resumeToken) {
-      throw new Error("Resume token is invalid");
-    }
+    this.assertSessionResumeToken(session, resumeToken);
 
     await this.persistence.updateGuestSessionNickname(sessionId, nickname);
     session.nickname = nickname;
@@ -205,9 +204,7 @@ export class RoomService {
   async resumeSession(roomCode: string, sessionId: string, resumeToken: string): Promise<RoomSnapshot> {
     const session = await this.ensureSessionLoaded(sessionId);
     const room = await this.ensureRoomLoaded(roomCode);
-    const tokenValid =
-      (await this.cache.verifyResumeToken(sessionId, roomCode, resumeToken)) || session.resumeToken === resumeToken;
-    if (!tokenValid) {
+    if (!(await this.isResumeTokenValid(session, roomCode, resumeToken))) {
       throw new Error("Resume token is invalid");
     }
 
@@ -332,13 +329,14 @@ export class RoomService {
     return this.appendMessage(roomCode, sessionId, "emoji", content);
   }
 
-  async markDisconnected(sessionId: string): Promise<void> {
+  async markDisconnected(sessionId: string, roomCode?: string): Promise<void> {
     const session = this.sessions.get(sessionId);
-    if (!session?.currentRoomCode) {
+    const activeRoomCode = roomCode ?? session?.currentRoomCode;
+    if (!activeRoomCode) {
       return;
     }
 
-    const room = this.rooms.get(session.currentRoomCode);
+    const room = this.rooms.get(activeRoomCode);
     if (!room) {
       return;
     }
@@ -361,9 +359,12 @@ export class RoomService {
     metadata?: Record<string, string | number | boolean | null>;
   }): Promise<void> {
     this.metrics.incrementErrors();
-    if (payload.roomCode) {
-      await this.emitEvent(payload.roomCode, "client.error", payload);
-    }
+    log("warn", "Client error reported", payload);
+  }
+
+  async authenticateSession(sessionId: string, resumeToken: string): Promise<void> {
+    const session = await this.ensureSessionLoaded(sessionId);
+    this.assertSessionResumeToken(session, resumeToken);
   }
 
   getMetrics() {
@@ -403,11 +404,14 @@ export class RoomService {
       type,
       content,
       createdAt: new Date(now).toISOString(),
-      senderSessionId: sessionId,
       senderNickname: player.nickname,
     };
+    const persistedMessage: PersistedChatMessage = {
+      ...message,
+      senderSessionId: sessionId,
+    };
     room.messages = [...room.messages.slice(-49), message];
-    await this.persistence.saveChatMessage(roomCode, message);
+    await this.persistence.saveChatMessage(roomCode, persistedMessage);
     await this.emitEvent(roomCode, "chat.message", message);
     await this.afterMutation(roomCode);
     return this.buildSnapshot(roomCode, sessionId);
@@ -545,7 +549,7 @@ export class RoomService {
 
     const room: RoomRuntime = {
       roomCode,
-      hostSessionId: "",
+      hostSessionId: persistedRoom.hostSessionId,
       engine: createPokerEngine(persistedRoom.config),
       messages: [],
       createdAt: persistedRoom.createdAt,
@@ -610,7 +614,6 @@ export class RoomService {
 
   private toPublicPlayer(engine: PokerEngineState, player: EnginePlayer) {
     return {
-      sessionId: player.sessionId,
       nickname: player.nickname,
       seatIndex: player.seatIndex,
       stack: player.stack,
@@ -628,6 +631,16 @@ export class RoomService {
       rebuyRemainingHands: player.rebuyHandsRemaining,
       canRebuy: canRebuyChips(engine, player.seatIndex),
     };
+  }
+
+  private assertSessionResumeToken(session: GuestSessionRecord, resumeToken: string): void {
+    if (!secretsEqual(session.resumeToken, resumeToken)) {
+      throw new Error("Resume token is invalid");
+    }
+  }
+
+  private async isResumeTokenValid(session: GuestSessionRecord, roomCode: string, resumeToken: string): Promise<boolean> {
+    return (await this.cache.verifyResumeToken(session.sessionId, roomCode, resumeToken)) || secretsEqual(session.resumeToken, resumeToken);
   }
 
   private requireSession(sessionId: string): GuestSessionRecord {
@@ -661,6 +674,15 @@ export class RoomService {
     }
     return player.sessionId;
   }
+}
+
+function secretsEqual(left: string, right: string): boolean {
+  const leftBuffer = Buffer.from(left);
+  const rightBuffer = Buffer.from(right);
+  if (leftBuffer.length !== rightBuffer.length) {
+    return false;
+  }
+  return timingSafeEqual(leftBuffer, rightBuffer);
 }
 
 function addSeatOrder(room: RoomRuntime, sessionId: string): void {

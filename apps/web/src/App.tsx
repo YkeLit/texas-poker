@@ -127,8 +127,12 @@ export default function App() {
 
   useEffect(() => {
     const handleError = (event: ErrorEvent) => {
+      if (!session?.sessionId || !session.resumeToken) {
+        return;
+      }
       void reportClientError({
-        sessionId: session?.sessionId,
+        sessionId: session.sessionId,
+        resumeToken: session.resumeToken,
         roomCode: snapshot?.roomCode,
         message: event.message,
         stack: event.error instanceof Error ? event.error.stack : undefined,
@@ -137,7 +141,7 @@ export default function App() {
 
     window.addEventListener("error", handleError);
     return () => window.removeEventListener("error", handleError);
-  }, [session?.sessionId, snapshot?.roomCode]);
+  }, [session?.resumeToken, session?.sessionId, snapshot?.roomCode]);
 
   const roomSummary = useMemo(() => {
     if (!snapshot) {
@@ -169,7 +173,7 @@ export default function App() {
     setStatus(`正在连接房间 ${roomCode}...`);
 
     try {
-      const joinResponse = await joinRoom(roomCode, activeSession.sessionId);
+      const joinResponse = await joinRoom(roomCode, activeSession.sessionId, activeSession.resumeToken);
       const socket = io(resolveSocketOrigin(window.location.origin, import.meta.env.VITE_SOCKET_ORIGIN), {
         autoConnect: true,
         transports: ["websocket"],
@@ -249,7 +253,7 @@ export default function App() {
       if (!resolvedConfig) {
         throw new Error("请先填写有效的房间配置");
       }
-      const response = await createRoom(activeSession.sessionId, {
+      const response = await createRoom(activeSession.sessionId, activeSession.resumeToken, {
         ...resolvedConfig,
       });
       await connectToRoom(response.roomCode, activeSession);
