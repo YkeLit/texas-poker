@@ -12,8 +12,9 @@ function sign(payload: string, secret: string): string {
   return createHmac("sha256", secret).update(payload).digest("base64url");
 }
 
-export function createSignedToken<T extends Record<string, unknown>>(payload: T, secret: string): string {
-  const encodedPayload = encodeBase64Url(JSON.stringify(payload));
+export function createSignedToken<T extends Record<string, unknown>>(payload: T, secret: string, ttlSeconds = 60): string {
+  const now = Math.floor(Date.now() / 1000);
+  const encodedPayload = encodeBase64Url(JSON.stringify({ ...payload, iat: now, exp: now + ttlSeconds }));
   const signature = sign(encodedPayload, secret);
   return `${encodedPayload}.${signature}`;
 }
@@ -29,5 +30,9 @@ export function verifySignedToken<T extends Record<string, unknown>>(token: stri
     throw new Error("Token signature mismatch");
   }
 
-  return JSON.parse(decodeBase64Url(encodedPayload)) as T;
+  const payload = JSON.parse(decodeBase64Url(encodedPayload)) as T & { exp?: number };
+  if (typeof payload.exp !== "number" || payload.exp <= Math.floor(Date.now() / 1000)) {
+    throw new Error("Token expired");
+  }
+  return payload;
 }

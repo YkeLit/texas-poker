@@ -1,23 +1,13 @@
-Original prompt: 我需要开发一个联机版的德州扑克
+Original prompt: Implement the extensible shared room/reconnect runtime and migrate Texas Hold'em to dedicated Redis, secure reconnect, multi-connection presence and continue/auto-action behavior.
 
-- 2026-03-18: 初始化项目为空目录，已确定实现为 pnpm monorepo，包含 web、server、shared 和 poker-engine。
-- 2026-03-18: 已完成共享类型、牌局引擎、Fastify + Socket.IO 服务端、React 前端牌桌和基础测试。
-- 2026-03-18: 服务端当前默认以内存运行时为主，Prisma/Redis 已补 schema 与适配层，数据库环境可后续直接接入。
-- 2026-03-18: 已对当前前端改动做浏览器实测，`apps/web` 单测与 build 通过，创建 6 人桌并入座链路可用，控制台未出现新的页面脚本错误。
-- 2026-03-18: 实测发现桌面端 `hero-status` 会遮挡底部座位，`5号位` 点击被 `hero-status` 拦截；移动端 `table-stage` 仍为横向 flex，导致牌桌区域宽度约 788px，在 390px 视口下出现横向溢出。
-- 2026-03-18: 牌桌现已改为固定 9 人桌，创建房间不再选择人数；服务端与引擎统一为“至少两人入座且所有已入座玩家都已准备”后才能开局。
-- 2026-03-18: 前端桌面布局已改成中间主舞台 + 下方操作区 + 浮动聊天抽屉，座位卡片缩小为规则网格，不再发生重叠；你的手牌改为更高强调样式。
-- 2026-03-18: 已修复聊天消息发送后不即时回显的问题；前端收到 `chat.message` 后会直接合并到当前房间消息列表。聊天输入现在在未入座时禁用，避免用户发送失败却无感知。
-- 2026-03-18: 牌桌布局已进一步调整为“操作区在上、公共牌与底牌在中、座位区在下”；服务端快照新增每位玩家的最近操作，座位卡片可显示如过牌、跟注、加注到、弃牌、已准备等标签。
-- 2026-03-18: 已改为完全手动开始下一手，取消自动开局；建房参数已放开为自定义输入，支持自定义起始筹码、大小盲、行动时间和“补充筹码等待局数”。
-- 2026-03-18: 已重做输光场景：玩家输光后进入补充筹码冷却期，等待配置的局数后可手动补充到起始筹码，再重新准备参与后续牌局。
-- 2026-03-19: 已开始修复 6 项联机牌桌问题；共享快照准备新增大小盲座位字段，服务端已补游客会话改名接口，最近操作文案中的加注语义已改为“加注 X”。
-- 2026-03-19: 已完成本轮修复并验证：前端下注/加注输入改为“本次追加筹码”，座位卡已显示庄/小盲/大盲与摊牌公开底牌，大厅可保存昵称且不回写当前已入座昵称，聊天卡片改为按消息条目稳定铺开；`corepack pnpm --filter @texas-poker/web test`、`corepack pnpm --filter @texas-poker/server test`、`corepack pnpm --filter @texas-poker/poker-engine test` 以及 `corepack pnpm build` 均通过。真实浏览器 smoke 已确认大厅改名和聊天长消息布局正常；摊牌座位卡和大盲 limped pot 加注的真实多会话链路本轮主要由新增自动化测试覆盖。
-- 2026-03-19: 昵称保存按钮已进一步收窄为“仅在大厅昵称草稿发生变更时出现”，不再常驻显示禁用态按钮；对应大厅测试已同步更新。
-- 2026-03-20: 已修复摊牌阶段自己的底牌不显示问题：服务端快照会在 `holeCards` 清空后回退到 `revealedCards`，前端公共牌区也加了 hero cards 回退逻辑。聊天抽屉新增未读消息提醒，关闭时收到他人/系统新消息会在悬浮按钮上显示计数，打开聊天后清零。对应 `web`、`server` 测试和整仓 build 均已通过。
-- 2026-03-20: 已对上述改动补做验证：`corepack pnpm --filter @texas-poker/web test`、`corepack pnpm --filter @texas-poker/server test`、`corepack pnpm build` 全部通过；真实双标签页 smoke 已确认聊天未读 badge 会在他人发言时出现并在打开聊天后清零。浏览器控制台仅剩 `favicon.ico` 404，无新的页面脚本错误。
-- 2026-03-20: 正在按参考稿重做牌桌页视觉层；`App` 已改为顶部信息栏 + 阶段条 + 椭圆桌毡 + 底部动作带结构，`CommunityBoard`、`SeatRing`、`ActionPanel` 和 `app.css` 已切到金色点缀、蓝色桌毡、环桌座位布局，业务事件与测试敏感选择器保持不变。
-- 2026-03-20: 牌桌高拟真样式已完成并验证：`corepack pnpm --filter @texas-poker/web test`、`corepack pnpm --filter @texas-poker/web build` 通过；真实浏览器 smoke 已确认桌面端/移动端的新牌桌骨架、无横向溢出、入座与准备链路可用、聊天抽屉可正常展开。过程中修复了 `currentBet === 0` 被误渲染成座位顶部文本，以及移动端聊天按钮压住操作区正文的问题。当前浏览器控制台仍有一次 `socket.io` 连接在页面切换时提前关闭的 warning，但未出现新的页面脚本错误。
-- TODO: 增加真实浏览器端到端脚本，覆盖 2-3 个浏览器上下文一起对局。
-- TODO: 为 Docker 镜像补 Prisma migrate/generate 的正式启动脚本。
-- TODO: 若要上公网，继续补鉴权加固、观战和更细的运营指标。
+## 2026-08-05
+
+- Vendored the exact shared runtime release-candidate and registered the `continueWhileMissing` Texas Hold'em policy.
+- Removed production Redis-to-memory fallback; startup and `/readyz` now fail closed when the dedicated room Redis is unavailable.
+- Switched Compose from its private Redis container to navigation's `games-room-redis` through a Docker Secret.
+- Added expiry to signed Socket.IO join tokens.
+- Existing engine behavior already continues timers, auto check/fold, tracks multiple socket connections and sits a player out after two missed hands.
+
+TODO: replace plaintext resume-token request bodies/localStorage with the shared `__Host-texas-poker_guest` cookie and move active room snapshots from the transitional cache keys to `room:v1:texas-poker:`.
+
+Verification: server TypeScript check, 21 server tests, server build, shared package integrity pin, Compose rendering and `git diff --check` pass.

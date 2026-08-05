@@ -19,7 +19,7 @@ import { createRedisClient } from "./db/redis";
 import { log } from "./lib/logger";
 import { MetricsTracker } from "./lib/metrics";
 import { createSignedToken, verifySignedToken } from "./lib/tokens";
-import { MemoryCacheAdapter, RedisCacheAdapter, type CacheAdapter } from "./repositories/cache";
+import { RedisCacheAdapter, type CacheAdapter } from "./repositories/cache";
 import { NoopPersistenceAdapter, PrismaPersistenceAdapter, type PersistenceAdapter } from "./repositories/persistence";
 import { RoomService } from "./services/room-service";
 
@@ -36,17 +36,13 @@ export async function buildApp(options: BuildAppOptions = {}) {
   const prisma = await createPrismaClient(config.databaseUrl);
   const redis = createRedisClient(config.redisUrl);
   const persistence = options.persistence ?? (prisma ? new PrismaPersistenceAdapter(prisma) : new NoopPersistenceAdapter());
-  let cache: CacheAdapter = options.cache ?? new MemoryCacheAdapter();
-
-  if (!options.cache && redis) {
-    try {
-      await redis.connect();
-      cache = new RedisCacheAdapter(redis);
-    } catch (error) {
-      log("warn", "Redis connection failed, falling back to memory cache", {
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
+  let cache: CacheAdapter;
+  if (options.cache) {
+    cache = options.cache;
+  } else {
+    if (!redis) throw new Error("Room Redis is required");
+    await redis.connect();
+    cache = new RedisCacheAdapter(redis);
   }
 
   const metrics = new MetricsTracker();
@@ -85,6 +81,16 @@ export async function buildApp(options: BuildAppOptions = {}) {
     rooms: roomService.getMetrics().activeRooms,
     connections: roomService.getMetrics().activeConnections,
   }));
+
+  app.get("/readyz", async (_request, reply) => {
+    if (!redis) return reply.code(503).send({ ok: false });
+    try {
+      const response = await redis.ping();
+      return reply.code(response === "PONG" ? 200 : 503).send({ ok: response === "PONG" });
+    } catch {
+      return reply.code(503).send({ ok: false });
+    }
+  });
 
   app.get("/api/v1/ops/metrics", async () => roomService.getMetrics());
 

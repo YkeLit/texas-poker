@@ -85,7 +85,7 @@ describe("server integration", () => {
   let instance: Awaited<ReturnType<typeof buildApp>>;
 
   beforeEach(async () => {
-    instance = await buildApp({ config: TEST_CONFIG });
+    instance = await buildApp({ config: TEST_CONFIG, cache: new MemoryCacheAdapter() });
   });
 
   afterEach(async () => {
@@ -276,6 +276,7 @@ describe("server integration", () => {
     expect(readConfig({
       CLIENT_ORIGIN: "http://127.0.0.1:4173, https://poker.example.com",
       TOKEN_SECRET: "test-secret",
+      REDIS_URL: "redis://127.0.0.1:6379",
     }).clientOrigin).toEqual(["http://127.0.0.1:4173", "https://poker.example.com"]);
     expect(normalizeClientOrigins(["http://127.0.0.1:4173", "https://poker.example.com"])).toEqual([
       "http://127.0.0.1:4173",
@@ -287,6 +288,7 @@ describe("server integration", () => {
         ...TEST_CONFIG,
         clientOrigin: ["http://127.0.0.1:4173", "https://poker.example.com"],
       },
+      cache: new MemoryCacheAdapter(),
     });
 
     try {
