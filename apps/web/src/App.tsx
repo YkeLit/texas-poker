@@ -239,7 +239,9 @@ export default function App() {
 
     if (socket && activeSnapshot?.yourSeatIndex !== null && activeSnapshot?.yourSeatIndex !== undefined && activeSnapshot.stage === "waiting") {
       try {
-        await emitWithAck(socket, "seat.leave", {});
+        // A stale WebSocket must not trap a player in the room view. The HTTP
+        // leave request below remains authoritative for cleanup.
+        await emitWithAckWithin(socket, "seat.leave", {}, 1_500);
       } catch {
         // Best effort only. Leaving the room view should still work even if the seat cannot be released.
       }
@@ -496,12 +498,21 @@ export default function App() {
   );
 }
 
-async function emitWithAck(socket: Socket, event: string, payload: unknown) {
-  const response = await socket.emitWithAck(event, payload) as { ok: boolean; error?: string; snapshot?: RoomSnapshot };
+type SocketAck = { ok: boolean; error?: string; snapshot?: RoomSnapshot };
+
+function unwrapSocketAck(event: string, response: SocketAck) {
   if (!response.ok) {
     throw new Error(response.error ?? `Event ${event} failed`);
   }
   return response.snapshot;
+}
+
+async function emitWithAck(socket: Socket, event: string, payload: unknown) {
+  return unwrapSocketAck(event, await socket.emitWithAck(event, payload) as SocketAck);
+}
+
+async function emitWithAckWithin(socket: Socket, event: string, payload: unknown, timeoutMs: number) {
+  return unwrapSocketAck(event, await socket.timeout(timeoutMs).emitWithAck(event, payload) as SocketAck);
 }
 
 export function resolveSocketOrigin(browserOrigin: string, explicitOrigin?: string) {
