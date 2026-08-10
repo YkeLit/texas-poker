@@ -66,8 +66,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/shared
       '@ykelit/games-room-runtime':
-        specifier: file:../../vendor/ykelit-games-room-runtime-1.1.0.tgz
-        version: file:vendor/ykelit-games-room-runtime-1.1.0.tgz
+        specifier: file:../../vendor/ykelit-games-room-runtime-1.1.1.tgz
+        version: file:vendor/ykelit-games-room-runtime-1.1.1.tgz
       fastify:
         specifier: ^5.4.0
         version: 5.8.2
@@ -695,9 +695,9 @@ packages:
   '@vitest/utils@3.2.4':
     resolution: {integrity: sha512-fB2V0JFrQSMsCo9HiSq3Ezpdv4iYaXRG1Sx8edX3MwxfyNn83mKiGzOcH+Fkxt4MHxr3y42fQi1oeAInqgX2QA==}
 
-  '@ykelit/games-room-runtime@file:vendor/ykelit-games-room-runtime-1.1.0.tgz':
-    resolution: {integrity: sha512-IgER6gElaGhHiqQQPQFIdlYou3e69c3dLmPeLyryWr9+G3OnzAXEnaZ0TgvO8/zcbS+IW7tS+/s1Kbml14AZQA==, tarball: file:vendor/ykelit-games-room-runtime-1.1.0.tgz}
-    version: 1.1.0
+  '@ykelit/games-room-runtime@file:vendor/ykelit-games-room-runtime-1.1.1.tgz':
+    resolution: {integrity: sha512-iCt9bXcWC8rl6EO7O++6H4VEll4X5U0VjIEh1Q4X1WHXVgeuK4I5bnI4PeT/Oowj7bRXeBmSWnDVnBzGzzEHSg==, tarball: file:vendor/ykelit-games-room-runtime-1.1.1.tgz}
+    version: 1.1.1
     engines: {node: '>=22'}
 
   abstract-logging@2.0.1:
@@ -2282,7 +2282,7 @@ snapshots:
       loupe: 3.2.1
       tinyrainbow: 2.0.0
 
-  '@ykelit/games-room-runtime@file:vendor/ykelit-games-room-runtime-1.1.0.tgz':
+  '@ykelit/games-room-runtime@file:vendor/ykelit-games-room-runtime-1.1.1.tgz':
     dependencies:
       ioredis: 5.10.0
     transitivePeerDependencies:
