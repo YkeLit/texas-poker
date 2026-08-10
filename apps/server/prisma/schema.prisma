@@ -57,3 +57,38 @@ model ChatLog {
   room            Room          @relation(fields: [roomCode], references: [roomCode])
   sender          GuestSession? @relation(fields: [senderSessionId], references: [sessionId])
 }
+
+// v1 shared-runtime archives. Legacy tables above are retained for one release
+// cycle but are no longer used for active identity or room state.
+model RuntimeRoomArchive {
+  roomId            String   @id
+  roomCode          String
+  hostParticipantId String?
+  config             Json
+  createdAt          DateTime
+  updatedAt          DateTime @updatedAt
+  chatLogs           RuntimeChatLog[]
+  handHistories      RuntimeHandHistory[]
+}
+
+model RuntimeChatLog {
+  messageId         String   @id
+  roomId            String
+  senderParticipantId String?
+  nickname          String?
+  type              String
+  content           String
+  createdAt         DateTime
+  room              RuntimeRoomArchive @relation(fields: [roomId], references: [roomId])
+}
+
+model RuntimeHandHistory {
+  id         String   @id @default(cuid())
+  roomId     String
+  handNumber Int
+  payload    Json
+  createdAt  DateTime @default(now())
+  room       RuntimeRoomArchive @relation(fields: [roomId], references: [roomId])
+
+  @@unique([roomId, handNumber])
+}

@@ -1,5 +1,5 @@
 services:
-  # PostgreSQL stores guest sessions, room metadata, chat logs and hand history.
+  # PostgreSQL is retained for long-term chat and hand history only.
   postgres:
     image: postgres:16-alpine
     environment:
@@ -16,7 +16,6 @@ services:
       HOST: 0.0.0.0
       PORT: 3001
       CLIENT_ORIGIN: https://poker.games.zyyk.fun
-      TOKEN_SECRET: ${TOKEN_SECRET:?TOKEN_SECRET must be set}
       DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@postgres:5432/texas_poker
       ROOM_REDIS_HOST: games-room-redis
       ROOM_REDIS_PASSWORD_FILE: /run/secrets/room_redis_password

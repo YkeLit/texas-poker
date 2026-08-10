@@ -13,11 +13,12 @@
     "prisma:generate": "prisma generate"
   },
   "dependencies": {
+    "@fastify/cookie": "^11.0.2",
     "@fastify/cors": "^11.1.0",
     "@prisma/client": "^6.10.1",
     "@texas-poker/poker-engine": "workspace:*",
     "@texas-poker/shared": "workspace:*",
-    "@ykelit/games-room-runtime": "file:../../vendor/ykelit-games-room-runtime-1.0.0.tgz",
+    "@ykelit/games-room-runtime": "file:../../vendor/ykelit-games-room-runtime-1.1.0.tgz",
     "fastify": "^5.4.0",
     "ioredis": "^5.7.0",
     "socket.io": "^4.8.1",

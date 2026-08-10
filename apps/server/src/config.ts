@@ -4,7 +4,6 @@ export interface AppConfig {
   host: string;
   port: number;
   clientOrigin: string | string[];
-  tokenSecret: string;
   databaseUrl?: string;
   redisUrl?: string;
 }
@@ -12,10 +11,6 @@ export interface AppConfig {
 const DEFAULT_CLIENT_ORIGIN = "http://127.0.0.1:5173";
 
 export function readConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
-  const tokenSecret = env.TOKEN_SECRET?.trim();
-  if (!tokenSecret) {
-    throw new Error("TOKEN_SECRET is required");
-  }
   const redisPasswordFile = env.ROOM_REDIS_PASSWORD_FILE?.trim();
   const redisUrl = env.REDIS_URL?.trim() || (redisPasswordFile
     ? `redis://:${encodeURIComponent(readFileSync(redisPasswordFile, "utf8").trim())}@${env.ROOM_REDIS_HOST ?? "games-room-redis"}:6379`
@@ -28,7 +23,6 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     host: env.HOST ?? "0.0.0.0",
     port: Number(env.PORT ?? 3001),
     clientOrigin: parseClientOrigins(env.CLIENT_ORIGIN),
-    tokenSecret,
     databaseUrl: env.DATABASE_URL,
     redisUrl,
   };

@@ -7,7 +7,13 @@ import { CommunityBoard } from "./components/CommunityBoard";
 import { SeatRing } from "./components/SeatRing";
 
 const snapshot: RoomSnapshot = {
+  protocolVersion: 1,
+  capabilities: ["multi-connection"],
+  roomId: "room-1",
   roomCode: "ABC123",
+  revision: 3,
+  status: "playing",
+  participantId: "participant-1",
   config: {
     maxPlayers: 9,
     startingStack: 1000,

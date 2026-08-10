@@ -102,7 +102,13 @@ export interface HandResult {
 }
 
 export interface RoomSnapshot {
+  protocolVersion: 1;
+  capabilities: string[];
+  roomId: string;
   roomCode: string;
+  revision: number;
+  status: "lobby" | "playing" | "paused" | "completed" | "abandoned";
+  participantId: string;
   config: RoomConfig;
   handNumber: number;
   stage: TableStage;
@@ -124,52 +130,32 @@ export interface RoomSnapshot {
   startedAt?: string;
 }
 
-export interface GuestSession {
-  sessionId: string;
-  nickname: string;
-  resumeToken: string;
-  createdAt: string;
-}
-
-export interface ReconnectPayload {
-  roomCode: string;
-  sessionId: string;
-  resumeToken: string;
-}
-
 export interface RoomSummary {
+  protocolVersion: 1;
+  roomId: string;
   roomCode: string;
-  config: RoomConfig;
-  stage: TableStage;
-  connectedPlayers: number;
-  seatedPlayers: number;
-  hasStarted: boolean;
+  status: "lobby" | "playing" | "paused" | "completed" | "abandoned";
+  revision: number;
+  participantId: string;
 }
 
 export interface JoinRoomResponse {
+  protocolVersion: 1;
+  roomId: string;
   roomCode: string;
-  wsToken: string;
-  snapshot: RoomSnapshot;
+  status: RoomSnapshot["status"];
+  revision: number;
+  participantId: string;
 }
 
-export interface CreateRoomResponse {
-  roomCode: string;
-  snapshot: RoomSnapshot;
-}
+export type CreateRoomResponse = JoinRoomResponse;
 
 export interface PlayerActionCommand {
   type: ActionType;
   amount?: number;
 }
 
-export interface SocketAuthedPayload {
-  roomCode: string;
-  sessionId: string;
-}
-
 export interface ErrorReportPayload {
-  sessionId: string;
-  resumeToken: string;
   roomCode?: string;
   message: string;
   stack?: string;
@@ -193,30 +179,14 @@ export const roomConfigSchema = z.object({
   path: ["bigBlind"],
 });
 
-export const createGuestSessionSchema = z.object({
-  nickname: z.string().trim().min(1).max(20),
-});
-
-export const updateGuestSessionSchema = z.object({
-  nickname: z.string().trim().min(1).max(20),
-  resumeToken: z.string().min(1),
-});
-
 export const createRoomSchema = z.object({
-  sessionId: z.string().min(1),
-  resumeToken: z.string().min(1),
+  nickname: z.string().trim().min(1).max(16),
   config: roomConfigSchema,
 });
 
 export const joinRoomSchema = z.object({
-  sessionId: z.string().min(1),
-  resumeToken: z.string().min(1),
-});
-
-export const reconnectSchema = z.object({
   roomCode: z.string().trim().length(6),
-  sessionId: z.string().min(1),
-  resumeToken: z.string().min(1),
+  nickname: z.string().trim().min(1).max(16),
 });
 
 export const playerActionSchema = z.object({
@@ -237,8 +207,6 @@ export const emojiMessageSchema = z.object({
 });
 
 export const errorReportSchema = z.object({
-  sessionId: z.string().min(1),
-  resumeToken: z.string().min(1),
   roomCode: z.string().trim().length(6).optional(),
   message: z.string().trim().min(1),
   stack: z.string().optional(),
