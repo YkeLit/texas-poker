@@ -42,7 +42,6 @@ import {
   type RoomConfig,
   type RoomSnapshot,
 } from "@texas-poker/shared";
-import type { RoomArchive } from "./repositories/archive";
 
 export const GAME_ID = "texas-poker";
 export const COOKIE_NAME = guestCookieName(GAME_ID);
@@ -310,7 +309,7 @@ export interface TexasRoomService {
   close(): Promise<void>;
 }
 
-export async function startTexasRoomRuntime(app: FastifyInstance, redisUrl: string, origins: string[], archive: RoomArchive): Promise<TexasRoomService> {
+export async function startTexasRoomRuntime(app: FastifyInstance, redisUrl: string, origins: string[]): Promise<TexasRoomService> {
   const redis = new Redis(redisUrl, { maxRetriesPerRequest: 2, enableReadyCheck: true });
   redis.on("error", (error) => app.log.error({ err: error }, "room redis error"));
   let scheduleRoom: (roomId: string) => Promise<void> = async () => undefined;
@@ -344,21 +343,6 @@ export async function startTexasRoomRuntime(app: FastifyInstance, redisUrl: stri
     }
   };
 
-  const archiveRoom = async (roomId: string, command?: CommandEnvelope<TexasCommand>): Promise<void> => {
-    try {
-      const room = await runtime.loadRoom(roomId);
-      if (!room) return;
-      await archive.ensureRoom(room);
-      if (command?.type === "chat.send" || command?.type === "emoji.send") {
-        const message = room.state.messages.find((candidate) => candidate.id === command.requestId);
-        if (message) await archive.saveChat(room.id, message);
-      }
-      if (room.state.engine.lastResult) await archive.saveHand(room.id, room.state.engine.lastResult);
-    } catch (error) {
-      app.log.error({ err: error, roomId }, "poker archive write failed");
-    }
-  };
-
   scheduleRoom = async (roomId) => {
     const previous = timers.get(roomId);
     if (previous) clearTimeout(previous);
@@ -387,7 +371,6 @@ export async function startTexasRoomRuntime(app: FastifyInstance, redisUrl: stri
           payload: { deadlineAt },
         });
         await broadcast(roomId);
-        await archiveRoom(roomId);
         await scheduleRoom(roomId);
       } catch (error) {
         app.log.warn({ err: error, roomId }, "automatic poker action failed");
@@ -429,7 +412,6 @@ export async function startTexasRoomRuntime(app: FastifyInstance, redisUrl: stri
         socket.emit("command.result", result);
         await broadcast(envelope.roomId);
         await scheduleRoom(envelope.roomId);
-        await archiveRoom(envelope.roomId, envelope);
       } catch (error) {
         const mapped = RoomApi.error(error).body.error;
         const result: CommandResponse = {

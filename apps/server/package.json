@@ -7,15 +7,12 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsup --config tsup.config.ts",
     "start": "node dist/index.js",
-    "db:push": "prisma db push --skip-generate",
-    "start:prod": "prisma db push --skip-generate && node dist/index.js",
-    "test": "vitest run",
-    "prisma:generate": "prisma generate"
+    "start:prod": "node dist/index.js",
+    "test": "vitest run"
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.2",
     "@fastify/cors": "^11.1.0",
-    "@prisma/client": "^6.10.1",
     "@texas-poker/poker-engine": "workspace:*",
     "@texas-poker/shared": "workspace:*",
     "@ykelit/games-room-runtime": "file:../../vendor/ykelit-games-room-runtime-1.1.1.tgz",
@@ -25,7 +22,6 @@
     "zod": "^3.25.67"
   },
   "devDependencies": {
-    "prisma": "^6.10.1",
     "socket.io-client": "^4.8.1"
   }
 }

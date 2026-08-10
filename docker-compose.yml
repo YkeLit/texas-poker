@@ -1,14 +1,4 @@
 services:
-  # PostgreSQL is retained for long-term chat and hand history only.
-  postgres:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_DB: texas_poker
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
-
   server:
     image: ${TEXAS_POKER_SERVER_IMAGE:-ghcr.io/ykelit/texas-poker-server:latest}
     pull_policy: always
@@ -16,13 +6,10 @@ services:
       HOST: 0.0.0.0
       PORT: 3001
       CLIENT_ORIGIN: https://poker.games.zyyk.fun
-      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@postgres:5432/texas_poker
       ROOM_REDIS_HOST: games-room-redis
       ROOM_REDIS_PASSWORD_FILE: /run/secrets/room_redis_password
     secrets:
       - room_redis_password
-    depends_on:
-      - postgres
     expose:
       - "3001"
     networks:
@@ -46,9 +33,6 @@ services:
       games-internal:
         aliases:
           - texas-poker-web
-
-volumes:
-  postgres-data:
 
 networks:
   games-internal:

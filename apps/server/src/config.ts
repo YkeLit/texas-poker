@@ -4,7 +4,6 @@ export interface AppConfig {
   host: string;
   port: number;
   clientOrigin: string | string[];
-  databaseUrl?: string;
   redisUrl?: string;
 }
 
@@ -23,7 +22,6 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     host: env.HOST ?? "0.0.0.0",
     port: Number(env.PORT ?? 3001),
     clientOrigin: parseClientOrigins(env.CLIENT_ORIGIN),
-    databaseUrl: env.DATABASE_URL,
     redisUrl,
   };
 }

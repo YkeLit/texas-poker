@@ -3,8 +3,6 @@ import cors from "@fastify/cors";
 import Fastify, { type FastifyReply } from "fastify";
 import { createRoomSchema, errorReportSchema, joinRoomSchema } from "@texas-poker/shared";
 import type { AppConfig } from "./config";
-import { createPrismaClient } from "./db/prisma";
-import { NoopRoomArchive, PrismaRoomArchive } from "./repositories/archive";
 import {
   RoomApi,
   setGuestCookie,
@@ -29,9 +27,7 @@ export async function buildApp(options: BuildAppOptions) {
   });
   await app.register(cookie);
   await app.register(cors, { origin: origins, credentials: true });
-  const prisma = await createPrismaClient(options.config.databaseUrl);
-  const archive = prisma ? new PrismaRoomArchive(prisma) : new NoopRoomArchive();
-  const roomService = await startTexasRoomRuntime(app, options.config.redisUrl, origins, archive);
+  const roomService = await startTexasRoomRuntime(app, options.config.redisUrl, origins);
 
   app.get("/healthz", async () => ({ ok: true }));
   app.get("/readyz", async (_request, reply) => {
@@ -49,8 +45,6 @@ export async function buildApp(options: BuildAppOptions) {
     try {
       const result = await roomService.api.create(tokenFromRequest(request), { nickname: parsed.data.nickname, settings: parsed.data.config });
       if (result.guestToken) setGuestCookie(reply, result.guestToken);
-      const room = await roomService.runtime.loadRoom(result.body.roomId);
-      if (room) void archive.ensureRoom(room).catch((error) => app.log.error({ err: error, roomId: room.id }, "poker archive write failed"));
       return reply.code(result.status).send(result.body);
     } catch (error) {
       return sendRoomError(reply, error);
@@ -101,7 +95,6 @@ export async function buildApp(options: BuildAppOptions) {
 
   app.addHook("onClose", async () => {
     await roomService.close();
-    await archive.close();
   });
 
   return { app, roomService };

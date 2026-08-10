@@ -44,7 +44,6 @@ docker compose up -d
 
 Compose 会启动：
 
-- PostgreSQL
 - 连接导航栈提供的专用 `games-room-redis`
 - 实时服务端
 - Web 客户端
@@ -62,14 +61,11 @@ export TEXAS_POKER_WEB_IMAGE=ghcr.io/ykelit/texas-poker-web:main
 docker compose up -d
 ```
 
-在启动 compose 前，需要先提供这些必填密钥：
+在启动 compose 前，需要提供专用房间 Redis 密码文件：
 
-- `POSTGRES_PASSWORD`：PostgreSQL 密码
 - `ROOM_REDIS_PASSWORD_FILE_HOST`：专用房间 Redis 密码文件
 
-`postgres` 只保留在 compose 内部网络；活跃房间 Redis 由导航栈统一提供，服务端通过 Docker Secret 连接。
-
-服务端容器会在启动时自动执行 `prisma db push --skip-generate`，因此首次连到一块全新的 PostgreSQL 卷时也会自动建表。
+活跃房间、聊天和牌局状态统一保存在专用 Redis 中；个人使用部署不再写入 SQL 归档。
 
 `CLIENT_ORIGIN` 支持多个来源，使用逗号分隔即可，例如：
 
@@ -84,10 +80,9 @@ export VITE_SOCKET_ORIGIN=https://poker.example.com
 docker compose up -d
 ```
 
-### PostgreSQL 和 Redis 是做什么的
+### Redis 是做什么的
 
-- `PostgreSQL`：只归档房间元数据、聊天和手牌历史。旧游客/房间表保留一个发布周期，但不再写入。
-- `games-room-redis`：以 `room:v1:texas-poker:` 命名空间保存游客令牌哈希、活跃房间、幂等结果、presence 和 CAS revision；Redis 不可用时服务 readiness 失败，不降级到内存。
+- `games-room-redis`：以 `room:v1:texas-poker:` 命名空间保存游客令牌哈希、活跃房间、聊天、幂等结果、presence 和 CAS revision。个人使用部署不做 SQL 归档；Redis 不可用时服务 readiness 失败，不降级到内存。
 
 服务端不会退回进程内存。房间与游客身份恢复必须使用专用 Redis。
 

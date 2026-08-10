@@ -10,7 +10,7 @@ Original prompt: Implement the extensible shared room/reconnect runtime and migr
 - Added runtime timer restoration: attaching after a full server restart restores the same room/private hand and rebuilds the remaining action timer from Redis.
 - Viewer snapshots expose only the viewer's hole cards; opponents expose only card counts. Deck order and random seed are never sent.
 - Removed the old process-memory RoomService, plaintext resume-token cache, websocket token signer and their HTTP/Socket routes.
-- Kept legacy Postgres tables for one release cycle and added independent runtime archive tables. A real Postgres run stored one room, one chat and one hand result while the legacy GuestSession table remained empty.
+- Removed SQL and all archive writes; active rooms, chat and hand state are intentionally ephemeral Redis state for this personal-use deployment.
 
 Verification:
 
@@ -18,5 +18,5 @@ Verification:
 - Real Redis HTTP/Socket smoke passed create/join, secure cookie flags, two private views, chat, multi-tab final-disconnect presence and automatic check/fold.
 - Full server restart restored room `JPXW2L`, the same two private cards and the persisted timer; the timer advanced revision after restart.
 - The required web-game Playwright client produced `/tmp/texas-poker-game-test/shot-0.png` and a lobby `render_game_to_text` snapshot with no console-error file; visual inspection passed.
-- Prisma `db push`, real Postgres archive counts, Compose rendering and `git diff --check` pass.
+- Redis-backed restart recovery, Compose rendering and `git diff --check` pass.
 - Runtime 1.1.1 integrity is pinned to `sha512-iCt9bX...EHSg==`; all 34 tests and production builds pass after the patch upgrade.
