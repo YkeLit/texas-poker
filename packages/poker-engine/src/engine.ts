@@ -174,16 +174,16 @@ export function canStartHand(state: PokerEngineState): boolean {
   const eligiblePlayers = state.seats
     .filter((player): player is EnginePlayer => player !== null)
     .filter((player) => player.stack > 0 && player.status !== "sit-out" && player.status !== "out");
-  return eligiblePlayers.length >= 2 && eligiblePlayers.every((player) => player.ready && player.presence === "connected");
+  return eligiblePlayers.length >= 2 && eligiblePlayers.every((player) => player.ready);
 }
 
-export function startHand(state: PokerEngineState, now = new Date()): void {
+export function startHand(state: PokerEngineState, now = new Date(), random: () => number = Math.random): void {
   if (isHandActive(state.stage)) {
     throw new Error("A hand is already in progress");
   }
 
   if (!canStartHand(state)) {
-    throw new Error("All seated players must be connected and ready, with at least two players");
+    throw new Error("All seated players must be ready, with at least two players");
   }
 
   const eligibleSeatIndexes = getEligibleSeatIndexes(state);
@@ -192,7 +192,7 @@ export function startHand(state: PokerEngineState, now = new Date()): void {
   state.lastResult = undefined;
   state.board = [];
   state.pots = [];
-  state.deck = shuffleDeck(createDeck());
+  state.deck = shuffleDeck(createDeck(), random);
   state.stage = "preflop";
   state.startedAt = now.toISOString();
   state.lastAutoAdvanceAt = undefined;

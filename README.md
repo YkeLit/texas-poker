@@ -9,7 +9,7 @@
 
 ## 功能范围
 
-- 游客昵称登录
+- HttpOnly Cookie 游客身份（前端不保存重连令牌）
 - 创建好友房并通过房号加入
 - 2-9 人牌桌
 - 标准无限注德州规则
@@ -21,7 +21,7 @@
 
 ```bash
 COREPACK_HOME=/tmp/corepack corepack pnpm install
-export TOKEN_SECRET=dev-only-long-random-secret
+export REDIS_URL=redis://127.0.0.1:6379
 COREPACK_HOME=/tmp/corepack corepack pnpm --filter @texas-poker/server dev
 COREPACK_HOME=/tmp/corepack corepack pnpm --filter @texas-poker/web dev
 ```
@@ -44,8 +44,7 @@ docker compose up -d
 
 Compose 会启动：
 
-- PostgreSQL
-- Redis
+- 连接导航栈提供的专用 `games-room-redis`
 - 实时服务端
 - Web 客户端
 
@@ -62,15 +61,11 @@ export TEXAS_POKER_WEB_IMAGE=ghcr.io/ykelit/texas-poker-web:main
 docker compose up -d
 ```
 
-在启动 compose 前，需要先提供这些必填密钥：
+在启动 compose 前，需要提供专用房间 Redis 密码文件：
 
-- `TOKEN_SECRET`：服务端 websocket token 的签名密钥
-- `POSTGRES_PASSWORD`：PostgreSQL 密码
-- `REDIS_PASSWORD`：Redis 访问密码
+- `ROOM_REDIS_PASSWORD_FILE_HOST`：专用房间 Redis 密码文件
 
-`postgres` 和 `redis` 默认只保留在 compose 内部网络，不再直接映射到宿主机端口；如果你需要临时排查，可以使用 `docker compose exec postgres psql ...` 或 `docker compose exec redis redis-cli -a "$REDIS_PASSWORD"`。
-
-服务端容器会在启动时自动执行 `prisma db push --skip-generate`，因此首次连到一块全新的 PostgreSQL 卷时也会自动建表。
+活跃房间、聊天和牌局状态统一保存在专用 Redis 中；个人使用部署不再写入 SQL 归档。
 
 `CLIENT_ORIGIN` 支持多个来源，使用逗号分隔即可，例如：
 
@@ -85,12 +80,11 @@ export VITE_SOCKET_ORIGIN=https://poker.example.com
 docker compose up -d
 ```
 
-### PostgreSQL 和 Redis 是做什么的
+### Redis 是做什么的
 
-- `PostgreSQL`：持久化游客会话、房间元数据、聊天记录和手牌历史。没有它时，服务重启后这些数据不会保留。
-- `Redis`：保存在线房间运行态、公开快照、重连 token、座位锁这类实时短期状态，也为后续多实例扩展预留空间。
+- `games-room-redis`：以 `room:v1:texas-poker:` 命名空间保存游客令牌哈希、活跃房间、聊天、幂等结果、presence 和 CAS revision。个人使用部署不做 SQL 归档；Redis 不可用时服务 readiness 失败，不降级到内存。
 
-如果你只想跑一个最轻量的本地试玩环境，当前服务端其实也能退回到内存模式；但在正式部署或需要断线恢复、历史留存时，建议保留这两个服务。
+服务端不会退回进程内存。房间与游客身份恢复必须使用专用 Redis。
 
 ## 调试钩子
 
@@ -98,5 +92,6 @@ docker compose up -d
 
 - `window.render_game_to_text()`
 - `window.__POKER_DEBUG__.advance(ms)`
+- `window.advanceTime(ms)`
 
 这两个接口可用于自动化回归和 Playwright 驱动测试。

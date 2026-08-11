@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Card, RoomConfig } from "@texas-poker/shared";
-import { applyPlayerAction, canRebuyChips, canStartHand, createPokerEngine, getAvailableActions, rebuyChips, seatPlayer, setPlayerReady, startHand } from "../src/engine";
+import { applyPlayerAction, canRebuyChips, canStartHand, createPokerEngine, getAvailableActions, rebuyChips, seatPlayer, setPlayerPresence, setPlayerReady, startHand } from "../src/engine";
 import { evaluateSevenCards } from "../src/hand-evaluator";
 
 const config: RoomConfig = {
@@ -112,11 +112,24 @@ describe("poker engine", () => {
     setPlayerReady(state, 1, true);
     expect(canStartHand(state)).toBe(false);
     expect(() => startHand(state, new Date("2026-03-18T12:00:00.000Z"))).toThrow(
-      "All seated players must be connected and ready, with at least two players",
+      "All seated players must be ready, with at least two players",
     );
 
     setPlayerReady(state, 2, true);
     expect(canStartHand(state)).toBe(true);
+  });
+
+  it("continues dealing for a disconnected ready player and sits them out after two hands", () => {
+    const state = setupTable(2);
+    setPlayerPresence(state, 0, "disconnected");
+    applyPlayerAction(state, 0, { type: "fold" }, new Date("2026-03-18T12:00:01.000Z"));
+    expect(state.seats[0]?.missedHands).toBe(1);
+    expect(canStartHand(state)).toBe(true);
+    startHand(state, new Date("2026-03-18T12:00:02.000Z"), () => 0.5);
+    applyPlayerAction(state, 1, { type: "fold" }, new Date("2026-03-18T12:00:03.000Z"));
+    expect(state.seats[0]?.missedHands).toBe(2);
+    expect(state.seats[0]?.status).toBe("sit-out");
+    expect(state.seats[0]?.ready).toBe(false);
   });
 
   it("keeps the big blind's raise option open when action returns unopened", () => {

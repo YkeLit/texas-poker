@@ -1,4 +1,3 @@
-import { randomInt } from "node:crypto";
 import type { Card, Suit } from "@texas-poker/shared";
 
 const SUITS: Suit[] = ["clubs", "diamonds", "hearts", "spades"];
@@ -14,10 +13,10 @@ export function createDeck(): Card[] {
   return deck;
 }
 
-export function shuffleDeck(sourceDeck = createDeck()): Card[] {
+export function shuffleDeck(sourceDeck = createDeck(), random: () => number = Math.random): Card[] {
   const deck = [...sourceDeck];
   for (let index = deck.length - 1; index > 0; index -= 1) {
-    const swapIndex = randomInt(index + 1);
+    const swapIndex = Math.floor(random() * (index + 1));
     const current = deck[index];
     deck[index] = deck[swapIndex]!;
     deck[swapIndex] = current!;

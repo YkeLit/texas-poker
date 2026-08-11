@@ -1,59 +1,40 @@
-import type {
-  CreateRoomResponse,
-  ErrorReportPayload,
-  GuestSession,
-  JoinRoomResponse,
-  RoomConfig,
-  RoomSummary,
-} from "@texas-poker/shared";
+import type { CreateRoomResponse, ErrorReportPayload, JoinRoomResponse, RoomConfig, RoomSummary } from "@texas-poker/shared";
 
-const JSON_HEADERS = {
-  "Content-Type": "application/json",
-};
+const JSON_HEADERS = { "Content-Type": "application/json" };
 
 async function requestJson<T>(input: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(input, init);
+  const response = await fetch(input, { credentials: "include", ...init });
   if (!response.ok) {
-    const payload = (await response.json().catch(() => ({}))) as { error?: string };
-    throw new Error(payload.error ?? `Request failed with status ${response.status}`);
+    const payload = (await response.json().catch(() => ({}))) as { error?: string | { message?: string }; message?: string };
+    const message = typeof payload.error === "string" ? payload.error : payload.error?.message ?? payload.message;
+    throw new Error(message ?? `Request failed with status ${response.status}`);
   }
+  if (response.status === 204) return undefined as T;
   return (await response.json()) as T;
 }
 
-export function createGuestSession(nickname: string) {
-  return requestJson<GuestSession>("/api/v1/guest/sessions", {
-    method: "POST",
-    headers: JSON_HEADERS,
-    body: JSON.stringify({ nickname }),
-  });
-}
-
-export function updateGuestSessionNickname(sessionId: string, nickname: string, resumeToken: string) {
-  return requestJson<GuestSession>(`/api/v1/guest/sessions/${sessionId}`, {
-    method: "PATCH",
-    headers: JSON_HEADERS,
-    body: JSON.stringify({ nickname, resumeToken }),
-  });
-}
-
-export function createRoom(sessionId: string, resumeToken: string, config: RoomConfig) {
+export function createRoom(nickname: string, config: RoomConfig) {
   return requestJson<CreateRoomResponse>("/api/v1/rooms", {
     method: "POST",
     headers: JSON_HEADERS,
-    body: JSON.stringify({ sessionId, resumeToken, config }),
+    body: JSON.stringify({ nickname, config }),
   });
 }
 
-export function joinRoom(roomCode: string, sessionId: string, resumeToken: string) {
-  return requestJson<JoinRoomResponse>(`/api/v1/rooms/${roomCode}/join`, {
+export function joinRoom(roomCode: string, nickname: string) {
+  return requestJson<JoinRoomResponse>("/api/v1/rooms/join", {
     method: "POST",
     headers: JSON_HEADERS,
-    body: JSON.stringify({ sessionId, resumeToken }),
+    body: JSON.stringify({ roomCode, nickname }),
   });
 }
 
-export function getRoomSummary(roomCode: string) {
-  return requestJson<RoomSummary>(`/api/v1/rooms/${roomCode}`);
+export function getActiveRoom() {
+  return requestJson<RoomSummary | { activeRoom: null }>("/api/v1/session/active-room");
+}
+
+export function leaveRoom(roomId: string) {
+  return requestJson<void>(`/api/v1/rooms/${roomId}/leave`, { method: "POST" });
 }
 
 export function reportClientError(payload: ErrorReportPayload) {

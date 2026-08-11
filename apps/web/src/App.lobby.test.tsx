@@ -3,265 +3,98 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { GuestSession, RoomSnapshot } from "@texas-poker/shared";
+import type { RoomSnapshot, RoomSummary } from "@texas-poker/shared";
 import App from "./App";
 
-const { mockIo } = vi.hoisted(() => ({
-  mockIo: vi.fn(),
-}));
+const { mockIo } = vi.hoisted(() => ({ mockIo: vi.fn() }));
+vi.mock("socket.io-client", () => ({ io: mockIo }));
 
-vi.mock("socket.io-client", () => ({
-  io: mockIo,
-}));
-
-const session: GuestSession = {
-  sessionId: "session-1",
-  nickname: "旧昵称",
-  resumeToken: "resume-token",
-  createdAt: "2026-03-19T00:00:00.000Z",
+const summary: RoomSummary = {
+  protocolVersion: 1,
+  roomId: "room-1",
+  roomCode: "ABC123",
+  status: "lobby",
+  revision: 0,
+  participantId: "participant-1",
 };
 
-const roomSnapshot: RoomSnapshot = {
-  roomCode: "ABC123",
-  config: {
-    maxPlayers: 9,
-    startingStack: 1000,
-    smallBlind: 10,
-    bigBlind: 20,
-    actionTimeSeconds: 15,
-    rebuyCooldownHands: 2,
-  },
-  handNumber: 1,
-  stage: "preflop",
-  dealerSeatIndex: 0,
-  smallBlindSeatIndex: 0,
-  bigBlindSeatIndex: 1,
-  actingSeatIndex: 0,
+const snapshot: RoomSnapshot = {
+  ...summary,
+  capabilities: ["multi-connection"],
+  config: { maxPlayers: 9, startingStack: 1000, smallBlind: 10, bigBlind: 20, actionTimeSeconds: 15, rebuyCooldownHands: 2 },
+  handNumber: 0,
+  stage: "waiting",
+  dealerSeatIndex: null,
+  smallBlindSeatIndex: null,
+  bigBlindSeatIndex: null,
+  actingSeatIndex: null,
   actionDeadlineAt: null,
-  minRaiseTo: 40,
-  currentBet: 20,
+  minRaiseTo: null,
+  currentBet: 0,
   board: [],
   pots: [],
-  seats: [
-    {
-      seatIndex: 0,
-      occupied: true,
-      player: {
-        nickname: session.nickname,
-        seatIndex: 0,
-        stack: 990,
-        currentBet: 10,
-        totalCommitted: 10,
-        ready: true,
-        isHost: true,
-        status: "active",
-        presence: "connected",
-        canAct: true,
-        holeCardCount: 2,
-        missedHands: 0,
-        rebuyRemainingHands: 0,
-        canRebuy: false,
-      },
-    },
-    {
-      seatIndex: 1,
-      occupied: true,
-      player: {
-        nickname: "玩家二",
-        seatIndex: 1,
-        stack: 980,
-        currentBet: 20,
-        totalCommitted: 20,
-        ready: true,
-        isHost: false,
-        status: "active",
-        presence: "connected",
-        canAct: false,
-        holeCardCount: 2,
-        missedHands: 0,
-        rebuyRemainingHands: 0,
-        canRebuy: false,
-      },
-    },
-  ],
+  seats: Array.from({ length: 9 }, (_, seatIndex) => ({ seatIndex, occupied: false })),
   messages: [],
-  yourSeatIndex: 0,
-  yourHoleCards: [
-    { rank: 14, suit: "spades" },
-    { rank: 13, suit: "spades" },
-  ],
+  yourSeatIndex: null,
+  yourHoleCards: [],
   yourAvailableActions: [],
 };
 
-describe("App lobby rename flow", () => {
+describe("App unified guest flow", () => {
   let container: HTMLDivElement;
   let root: Root;
   let fetchMock: ReturnType<typeof vi.fn>;
-  const reactTestGlobals = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
 
   beforeEach(() => {
+    const values = new Map<string, string>();
+    const storage: Storage = {
+      get length() { return values.size; },
+      clear: () => values.clear(),
+      getItem: (key) => values.get(key) ?? null,
+      key: (index) => [...values.keys()][index] ?? null,
+      removeItem: (key) => { values.delete(key); },
+      setItem: (key, value) => { values.set(key, String(value)); },
+    };
+    vi.stubGlobal("localStorage", storage);
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
     localStorage.clear();
-    reactTestGlobals.IS_REACT_ACT_ENVIRONMENT = true;
-    mockIo.mockReset();
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
+    mockIo.mockReset();
   });
 
   afterEach(async () => {
-    await act(async () => {
-      root.unmount();
-    });
+    await act(async () => root.unmount());
     container.remove();
-    vi.unstubAllGlobals();
-    delete reactTestGlobals.IS_REACT_ACT_ENVIRONMENT;
     localStorage.clear();
+    vi.unstubAllGlobals();
   });
 
-  it("allows saving a nickname change from the lobby", async () => {
-    localStorage.setItem("texas-poker.session", JSON.stringify(session));
-    fetchMock.mockResolvedValueOnce(
-      new Response(JSON.stringify({ ...session, nickname: "新昵称" }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }),
-    );
-
-    await act(async () => {
-      root.render(<App />);
-    });
-
-    const input = container.querySelector("#nickname-input") as HTMLInputElement;
-    expect(input).not.toBeNull();
-    expect(input.disabled).toBe(false);
-    expect(input.value).toBe("旧昵称");
-    expect(container.textContent).not.toContain("保存昵称");
-
-    const setInputValue = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
-    await act(async () => {
-      setInputValue?.call(input, "新昵称");
-      input.dispatchEvent(new Event("input", { bubbles: true }));
-    });
-
-    const saveButton = Array.from(container.querySelectorAll("button")).find((button) => button.textContent === "保存昵称");
-    expect(saveButton).toBeDefined();
-    expect(saveButton?.hasAttribute("disabled")).toBe(false);
-
-    await act(async () => {
-      saveButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-      await Promise.resolve();
-    });
-
-    expect(fetchMock).toHaveBeenCalledWith(
-      `/api/v1/guest/sessions/${session.sessionId}`,
-      expect.objectContaining({
-        method: "PATCH",
-        body: JSON.stringify({ nickname: "新昵称", resumeToken: session.resumeToken }),
-      }),
-    );
-    expect(container.textContent).toContain("当前身份：新昵称");
-    expect(container.textContent).not.toContain("保存昵称");
+  it("does not persist a guest token or participant identity in localStorage", async () => {
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({ activeRoom: null }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    await act(async () => { root.render(<App />); await Promise.resolve(); });
+    expect(container.querySelector("#nickname-input")).not.toBeNull();
+    expect(localStorage.getItem("texas-poker.session")).toBeNull();
+    expect(localStorage.getItem("texas-poker.roomCode")).toBeNull();
   });
 
-  it("does not render rename controls after auto-rejoining a room", async () => {
-    localStorage.setItem("texas-poker.session", JSON.stringify(session));
-    localStorage.setItem("texas-poker.roomCode", roomSnapshot.roomCode);
-
-    fetchMock.mockResolvedValueOnce(
-      new Response(JSON.stringify({ roomCode: roomSnapshot.roomCode, wsToken: "token", snapshot: roomSnapshot }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }),
-    );
-
-    mockIo.mockReturnValue({
-      on: vi.fn(),
-      emitWithAck: vi.fn(async (event: string) => {
-        if (event === "room.join" || event === "session.resume") {
-          return { ok: true, snapshot: roomSnapshot };
-        }
-        return { ok: true };
-      }),
-      disconnect: vi.fn(),
-    });
-
-    await act(async () => {
-      root.render(<App />);
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-
-    expect(fetchMock).toHaveBeenCalledWith(
-      `/api/v1/rooms/${roomSnapshot.roomCode}/join`,
-      expect.objectContaining({
-        method: "POST",
-        body: JSON.stringify({ sessionId: session.sessionId, resumeToken: session.resumeToken }),
-      }),
-    );
-    expect(container.querySelector("#nickname-input")).toBeNull();
-    expect(container.textContent).not.toContain("保存昵称");
-    expect(container.textContent).toContain(`房号 ${roomSnapshot.roomCode}`);
-  });
-
-  it("shows an unread chat badge for new incoming messages and clears it when opening the drawer", async () => {
+  it("automatically attaches the HttpOnly cookie guest to its active room", async () => {
     const listeners = new Map<string, (payload: unknown) => void>();
-
-    localStorage.setItem("texas-poker.session", JSON.stringify(session));
-    localStorage.setItem("texas-poker.roomCode", roomSnapshot.roomCode);
-
-    fetchMock.mockResolvedValueOnce(
-      new Response(JSON.stringify({ roomCode: roomSnapshot.roomCode, wsToken: "token", snapshot: roomSnapshot }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }),
-    );
-
+    const emitWithAck = vi.fn(async () => ({ ok: true, roomId: summary.roomId }));
+    fetchMock.mockResolvedValue(new Response(JSON.stringify(summary), { status: 200, headers: { "Content-Type": "application/json" } }));
     mockIo.mockReturnValue({
-      on: vi.fn((event: string, handler: (payload: unknown) => void) => {
-        listeners.set(event, handler);
-      }),
-      emitWithAck: vi.fn(async (event: string) => {
-        if (event === "room.join" || event === "session.resume") {
-          return { ok: true, snapshot: roomSnapshot };
-        }
-        return { ok: true };
-      }),
+      on: vi.fn((event: string, listener: (payload: unknown) => void) => listeners.set(event, listener)),
+      emitWithAck,
       disconnect: vi.fn(),
     });
-
-    await act(async () => {
-      root.render(<App />);
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-
-    expect(container.querySelector(".chat-fab-badge")).toBeNull();
-
-    await act(async () => {
-      listeners.get("chat.message")?.({
-        id: "msg-1",
-        type: "chat",
-        content: "有新消息",
-        createdAt: "2026-03-20T00:00:00.000Z",
-        senderSessionId: "session-2",
-        senderNickname: "玩家二",
-      });
-      await Promise.resolve();
-    });
-
-    expect(container.querySelector(".chat-fab-badge")?.textContent).toBe("1");
-
-    const chatButton = Array.from(container.querySelectorAll("button")).find((button) => button.textContent?.includes("聊天"));
-    expect(chatButton).toBeDefined();
-
-    await act(async () => {
-      chatButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-      await Promise.resolve();
-    });
-
-    expect(container.querySelector(".chat-fab-badge")).toBeNull();
-    expect(container.textContent).toContain("有新消息");
+    await act(async () => { root.render(<App />); await Promise.resolve(); await Promise.resolve(); });
+    expect(emitWithAck).toHaveBeenCalledWith("room.attach", { roomId: summary.roomId });
+    await act(async () => { listeners.get("state.snapshot")?.(snapshot); await Promise.resolve(); });
+    expect(container.textContent).toContain(`房号 ${summary.roomCode}`);
+    expect(localStorage.getItem("texas-poker.roomCode")).toBe(summary.roomCode);
+    expect(localStorage.getItem("texas-poker.session")).toBeNull();
   });
 });

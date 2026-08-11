@@ -1,21 +1,22 @@
-Original prompt: 我需要开发一个联机版的德州扑克
+Original prompt: Implement the extensible shared room/reconnect runtime and migrate Texas Hold'em to dedicated Redis, secure reconnect, multi-connection presence and continue/auto-action behavior.
 
-- 2026-03-18: 初始化项目为空目录，已确定实现为 pnpm monorepo，包含 web、server、shared 和 poker-engine。
-- 2026-03-18: 已完成共享类型、牌局引擎、Fastify + Socket.IO 服务端、React 前端牌桌和基础测试。
-- 2026-03-18: 服务端当前默认以内存运行时为主，Prisma/Redis 已补 schema 与适配层，数据库环境可后续直接接入。
-- 2026-03-18: 已对当前前端改动做浏览器实测，`apps/web` 单测与 build 通过，创建 6 人桌并入座链路可用，控制台未出现新的页面脚本错误。
-- 2026-03-18: 实测发现桌面端 `hero-status` 会遮挡底部座位，`5号位` 点击被 `hero-status` 拦截；移动端 `table-stage` 仍为横向 flex，导致牌桌区域宽度约 788px，在 390px 视口下出现横向溢出。
-- 2026-03-18: 牌桌现已改为固定 9 人桌，创建房间不再选择人数；服务端与引擎统一为“至少两人入座且所有已入座玩家都已准备”后才能开局。
-- 2026-03-18: 前端桌面布局已改成中间主舞台 + 下方操作区 + 浮动聊天抽屉，座位卡片缩小为规则网格，不再发生重叠；你的手牌改为更高强调样式。
-- 2026-03-18: 已修复聊天消息发送后不即时回显的问题；前端收到 `chat.message` 后会直接合并到当前房间消息列表。聊天输入现在在未入座时禁用，避免用户发送失败却无感知。
-- 2026-03-18: 牌桌布局已进一步调整为“操作区在上、公共牌与底牌在中、座位区在下”；服务端快照新增每位玩家的最近操作，座位卡片可显示如过牌、跟注、加注到、弃牌、已准备等标签。
-- 2026-03-18: 已改为完全手动开始下一手，取消自动开局；建房参数已放开为自定义输入，支持自定义起始筹码、大小盲、行动时间和“补充筹码等待局数”。
-- 2026-03-18: 已重做输光场景：玩家输光后进入补充筹码冷却期，等待配置的局数后可手动补充到起始筹码，再重新准备参与后续牌局。
-- 2026-03-19: 已开始修复 6 项联机牌桌问题；共享快照准备新增大小盲座位字段，服务端已补游客会话改名接口，最近操作文案中的加注语义已改为“加注 X”。
-- 2026-03-19: 已完成本轮修复并验证：前端下注/加注输入改为“本次追加筹码”，座位卡已显示庄/小盲/大盲与摊牌公开底牌，大厅可保存昵称且不回写当前已入座昵称，聊天卡片改为按消息条目稳定铺开；`corepack pnpm --filter @texas-poker/web test`、`corepack pnpm --filter @texas-poker/server test`、`corepack pnpm --filter @texas-poker/poker-engine test` 以及 `corepack pnpm build` 均通过。真实浏览器 smoke 已确认大厅改名和聊天长消息布局正常；摊牌座位卡和大盲 limped pot 加注的真实多会话链路本轮主要由新增自动化测试覆盖。
-- 2026-03-19: 昵称保存按钮已进一步收窄为“仅在大厅昵称草稿发生变更时出现”，不再常驻显示禁用态按钮；对应大厅测试已同步更新。
-- 2026-03-20: 已修复摊牌阶段自己的底牌不显示问题：服务端快照会在 `holeCards` 清空后回退到 `revealedCards`，前端公共牌区也加了 hero cards 回退逻辑。聊天抽屉新增未读消息提醒，关闭时收到他人/系统新消息会在悬浮按钮上显示计数，打开聊天后清零。对应 `web`、`server` 测试和整仓 build 均已通过。
-- 2026-03-20: 已对上述改动补做验证：`corepack pnpm --filter @texas-poker/web test`、`corepack pnpm --filter @texas-poker/server test`、`corepack pnpm build` 全部通过；真实双标签页 smoke 已确认聊天未读 badge 会在他人发言时出现并在打开聊天后清零。浏览器控制台仅剩 `favicon.ico` 404，无新的页面脚本错误。
-- TODO: 增加真实浏览器端到端脚本，覆盖 2-3 个浏览器上下文一起对局。
-- TODO: 为 Docker 镜像补 Prisma migrate/generate 的正式启动脚本。
-- TODO: 若要上公网，继续补鉴权加固、观战和更细的运营指标。
+## 2026-08-10
+
+- Completed the `@ykelit/games-room-runtime` 1.1.1 cutover using `room:v1:texas-poker:` and the shared six-character room, nickname uniqueness, revision, replay and expiry behavior.
+- Replaced localStorage/session/resume-token and signed websocket join flows with the 30-day `__Host-texas-poker_guest` HttpOnly Secure SameSite=Lax cookie. The browser stores only the most recent room code.
+- Implemented the common HTTP endpoints and `room.attach`, `command`, `command.result`, `state.snapshot`, `presence.changed` and `room.expired` Socket.IO protocol with exact Origin validation.
+- All player and server timer actions use the same requestId idempotency and Redis CAS revision path. Deals are deterministic from the accepted request ID, so retries cannot reshuffle.
+- Texas Hold'em continues while players are missing, auto checks/folds at the persisted action deadline, and marks disconnected ready players sit-out after two missed hands. Multiple tabs share one seat and only the final disconnect changes presence.
+- Added runtime timer restoration: attaching after a full server restart restores the same room/private hand and rebuilds the remaining action timer from Redis.
+- Viewer snapshots expose only the viewer's hole cards; opponents expose only card counts. Deck order and random seed are never sent.
+- Removed the old process-memory RoomService, plaintext resume-token cache, websocket token signer and their HTTP/Socket routes.
+- Removed SQL and all archive writes; active rooms, chat and hand state are intentionally ephemeral Redis state for this personal-use deployment.
+
+Verification:
+
+- 34 unit/component/adapter tests pass across shared, engine, server and web packages; production builds pass for all four packages.
+- Real Redis HTTP/Socket smoke passed create/join, secure cookie flags, two private views, chat, multi-tab final-disconnect presence and automatic check/fold.
+- Full server restart restored room `JPXW2L`, the same two private cards and the persisted timer; the timer advanced revision after restart.
+- The required web-game Playwright client produced `/tmp/texas-poker-game-test/shot-0.png` and a lobby `render_game_to_text` snapshot with no console-error file; visual inspection passed.
+- Redis-backed restart recovery, Compose rendering and `git diff --check` pass.
+- Runtime 1.1.1 integrity is pinned to `sha512-iCt9bX...EHSg==`; all 34 tests and production builds pass after the patch upgrade.

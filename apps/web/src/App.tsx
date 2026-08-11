@@ -3,18 +3,17 @@ import { io, type Socket } from "socket.io-client";
 import {
   type ChatMessage,
   MAX_TABLE_PLAYERS,
-  type GuestSession,
   type RoomConfig,
+  type RoomSummary,
   type RoomSnapshot,
 } from "@texas-poker/shared";
-import { createGuestSession, createRoom, getRoomSummary, joinRoom, reportClientError, updateGuestSessionNickname } from "./lib/api";
+import { createRoom, getActiveRoom, joinRoom, leaveRoom, reportClientError } from "./lib/api";
 import { ActionPanel } from "./components/ActionPanel";
 import { ChatPanel } from "./components/ChatPanel";
 import { CommunityBoard } from "./components/CommunityBoard";
 import { SeatRing } from "./components/SeatRing";
 
 const STORAGE_KEYS = {
-  session: "texas-poker.session",
   roomCode: "texas-poker.roomCode",
 };
 
@@ -36,10 +35,6 @@ const DEFAULT_CONFIG: RoomConfig = {
 };
 
 export default function App() {
-  const [session, setSession] = useState<GuestSession | null>(() => {
-    const raw = localStorage.getItem(STORAGE_KEYS.session);
-    return raw ? (JSON.parse(raw) as GuestSession) : null;
-  });
   const [nicknameDraft, setNicknameDraft] = useState("");
   const [roomCodeDraft, setRoomCodeDraft] = useState(() => localStorage.getItem(STORAGE_KEYS.roomCode) ?? "");
   const [configDraft, setConfigDraft] = useState<RoomConfigDraft>(() => roomConfigToDraft(DEFAULT_CONFIG));
@@ -67,20 +62,6 @@ export default function App() {
       setUnreadChatCount(0);
     }
   }, [chatDrawerOpen]);
-
-  useEffect(() => {
-    if (!session) {
-      return;
-    }
-    localStorage.setItem(STORAGE_KEYS.session, JSON.stringify(session));
-  }, [session]);
-
-  useEffect(() => {
-    if (!session) {
-      return;
-    }
-    setNicknameDraft(session.nickname);
-  }, [session?.nickname, session?.sessionId]);
 
   useEffect(() => {
     if (snapshot?.roomCode) {
@@ -119,29 +100,20 @@ export default function App() {
         setClockOffset((value) => value + milliseconds);
       },
     };
+    window.advanceTime = (milliseconds: number) => setClockOffset((value) => value + milliseconds);
   }, [snapshot]);
 
   useEffect(() => {
-    if (!session) {
-      return;
-    }
-
-    const lastRoomCode = localStorage.getItem(STORAGE_KEYS.roomCode);
-    if (!lastRoomCode || snapshot) {
-      return;
-    }
-
-    void connectToRoom(lastRoomCode, session, true);
-  }, [session, snapshot]);
+    if (snapshot) return;
+    void getActiveRoom().then((active) => {
+      if ("activeRoom" in active) return;
+      return connectToRoom(active);
+    }).catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     const handleError = (event: ErrorEvent) => {
-      if (!session?.sessionId || !session.resumeToken) {
-        return;
-      }
       void reportClientError({
-        sessionId: session.sessionId,
-        resumeToken: session.resumeToken,
         roomCode: snapshot?.roomCode,
         message: event.message,
         stack: event.error instanceof Error ? event.error.stack : undefined,
@@ -150,7 +122,7 @@ export default function App() {
 
     window.addEventListener("error", handleError);
     return () => window.removeEventListener("error", handleError);
-  }, [session?.resumeToken, session?.sessionId, snapshot?.roomCode]);
+  }, [snapshot?.roomCode]);
 
   const roomSummary = useMemo(() => {
     if (!snapshot) {
@@ -161,44 +133,35 @@ export default function App() {
   const parsedConfig = useMemo(() => parseRoomConfigDraft(configDraft), [configDraft]);
   const stackConfigured = useMemo(() => parseConfigNumber(configDraft.startingStack, 100) !== null, [configDraft.startingStack]);
 
-  async function ensureSession() {
-    if (session) {
-      return session;
-    }
-
+  function requireNickname() {
     const nickname = nicknameDraft.trim();
-    if (!nickname) {
-      throw new Error("请先输入昵称");
-    }
-    const created = await createGuestSession(nickname);
-    setSession(created);
-    setStatus(`欢迎，${created.nickname}。可以创建房间，也可以输入房号加入。`);
-    return created;
+    if (!nickname) throw new Error("请先输入昵称");
+    return nickname;
   }
 
-  async function connectToRoom(roomCode: string, activeSession: GuestSession, shouldResume = false) {
+  async function connectToRoom(room: RoomSummary) {
     setIsConnecting(true);
     setError(null);
-    setStatus(`正在连接房间 ${roomCode}...`);
+    setStatus(`正在连接房间 ${room.roomCode}...`);
 
     try {
-      const joinResponse = await joinRoom(roomCode, activeSession.sessionId, activeSession.resumeToken);
       const socket = io(resolveSocketOrigin(window.location.origin, import.meta.env.VITE_SOCKET_ORIGIN), {
         autoConnect: true,
         transports: ["websocket"],
+        withCredentials: true,
       });
 
       socketRef.current?.disconnect();
       socketRef.current = socket;
 
-      socket.on("room.snapshot", (nextSnapshot: RoomSnapshot) => {
+      socket.on("state.snapshot", (nextSnapshot: RoomSnapshot) => {
         setSnapshot(nextSnapshot);
         setStatus(`已进入房间 ${nextSnapshot.roomCode}`);
       });
 
       socket.on("chat.message", (message: ChatMessage) => {
         setSnapshot((current) => mergeChatMessage(current, message));
-        if (!chatDrawerOpenRef.current && message.senderSessionId !== activeSession.sessionId) {
+        if (!chatDrawerOpenRef.current && message.senderSessionId !== snapshot?.participantId) {
           setUnreadChatCount((current) => Math.min(current + 1, 99));
         }
       });
@@ -207,23 +170,9 @@ export default function App() {
         setError(event.message);
       });
 
-      await emitWithAck(socket, "room.join", {
-        roomCode,
-        sessionId: activeSession.sessionId,
-        token: joinResponse.wsToken,
-      });
-
-      if (shouldResume) {
-        await emitWithAck(socket, "session.resume", {
-          roomCode,
-          sessionId: activeSession.sessionId,
-          resumeToken: activeSession.resumeToken,
-        });
-      }
-
-      setSnapshot(joinResponse.snapshot);
-      setStatus(`已连接到 ${roomCode}`);
-      localStorage.setItem(STORAGE_KEYS.roomCode, roomCode);
+      await emitWithAck(socket, "room.attach", { roomId: room.roomId });
+      setStatus(`已连接到 ${room.roomCode}`);
+      localStorage.setItem(STORAGE_KEYS.roomCode, room.roomCode);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
       throw cause;
@@ -232,43 +181,17 @@ export default function App() {
     }
   }
 
-  async function handleSaveNickname() {
-    if (!session) {
-      return;
-    }
-
-    const nickname = nicknameDraft.trim();
-    if (!nickname) {
-      setError("请先输入昵称");
-      return;
-    }
-    if (nickname === session.nickname) {
-      return;
-    }
-
-    try {
-      setError(null);
-      setStatus("正在保存昵称...");
-      const updated = await updateGuestSessionNickname(session.sessionId, nickname, session.resumeToken);
-      setNicknameDraft(updated.nickname);
-      setSession(updated);
-      setStatus(`昵称已更新为 ${updated.nickname}`);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    }
-  }
-
   async function handleCreateRoom() {
     try {
-      const activeSession = await ensureSession();
+      const nickname = requireNickname();
       const resolvedConfig = parsedConfig;
       if (!resolvedConfig) {
         throw new Error("请先填写有效的房间配置");
       }
-      const response = await createRoom(activeSession.sessionId, activeSession.resumeToken, {
+      const response = await createRoom(nickname, {
         ...resolvedConfig,
       });
-      await connectToRoom(response.roomCode, activeSession);
+      await connectToRoom(response);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     }
@@ -276,9 +199,8 @@ export default function App() {
 
   async function handleJoinRoom() {
     try {
-      const activeSession = await ensureSession();
-      await getRoomSummary(roomCodeDraft.trim().toUpperCase());
-      await connectToRoom(roomCodeDraft.trim().toUpperCase(), activeSession);
+      const response = await joinRoom(roomCodeDraft.trim().toUpperCase(), requireNickname());
+      await connectToRoom(response);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     }
@@ -292,7 +214,15 @@ export default function App() {
     }
 
     try {
-      await emitWithAck(socket, event, payload ?? {});
+      if (!snapshot) throw new Error("房间状态尚未就绪");
+      await emitWithAck(socket, "command", {
+        protocolVersion: 1,
+        requestId: crypto.randomUUID(),
+        roomId: snapshot.roomId,
+        expectedRevision: snapshot.revision,
+        type: event,
+        payload: payload ?? {},
+      });
       setError(null);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -309,13 +239,16 @@ export default function App() {
 
     if (socket && activeSnapshot?.yourSeatIndex !== null && activeSnapshot?.yourSeatIndex !== undefined && activeSnapshot.stage === "waiting") {
       try {
-        await emitWithAck(socket, "seat.leave", {});
+        // A stale WebSocket must not trap a player in the room view. The HTTP
+        // leave request below remains authoritative for cleanup.
+        await emitWithAckWithin(socket, "seat.leave", {}, 1_500);
       } catch {
         // Best effort only. Leaving the room view should still work even if the seat cannot be released.
       }
     }
 
     socket?.disconnect();
+    if (activeSnapshot) await leaveRoom(activeSnapshot.roomId).catch(() => undefined);
     socketRef.current = null;
     localStorage.removeItem(STORAGE_KEYS.roomCode);
     setRoomCodeDraft("");
@@ -335,8 +268,6 @@ export default function App() {
 
   function renderLobby() {
     const trimmedNickname = nicknameDraft.trim();
-    const canSaveNickname = Boolean(session) && Boolean(trimmedNickname) && trimmedNickname !== session?.nickname;
-
     return (
       <main className="landing-shell">
         <section className="hero-card">
@@ -358,17 +289,7 @@ export default function App() {
                 onChange={(event) => setNicknameDraft(event.target.value)}
               />
             </label>
-            {session && <p className="muted-copy">当前身份：{session.nickname}</p>}
-            {canSaveNickname && (
-              <button
-                type="button"
-                className="secondary-btn"
-                disabled={isConnecting}
-                onClick={handleSaveNickname}
-              >
-                保存昵称
-              </button>
-            )}
+            {trimmedNickname && <p className="muted-copy">昵称只用于当前房间。</p>}
           </div>
         </section>
 
@@ -488,11 +409,22 @@ export default function App() {
       return null;
     }
 
+    const occupiedSeatCount = snapshot.seats.filter((seat) => seat.occupied).length;
+
     return (
-      <main className="table-shell">
-        <header className="top-bar">
-          <div>
+      <main className="table-shell premium-table-shell">
+        <header className="top-bar table-topbar">
+          <div className="table-brand-block">
+            <span className="table-brand-mark">Texas Hold&apos;em</span>
             <h1>{roomSummary}</h1>
+          </div>
+          <div className="table-meta-strip" aria-label="牌桌信息">
+            <span className="table-live-pill">LIVE</span>
+            <span className="table-meta-chip">第 {snapshot.handNumber || 0} 手</span>
+            <span className="table-meta-chip">
+              {occupiedSeatCount} / {snapshot.config.maxPlayers} 玩家
+            </span>
+            <span className="table-meta-chip">{stageToTableLabel(snapshot.stage)}</span>
           </div>
           <div className="top-actions">
             <button type="button" className="ghost-btn" onClick={handleExitRoom}>
@@ -503,6 +435,29 @@ export default function App() {
 
         <div className="table-layout">
           <div className="table-main">
+            <section className="table-arena">
+              <section className="table-stage">
+                <div className="table-stage-shell">
+                  <div className="table-felt">
+                    <div className="felt-logo" aria-hidden="true">
+                      <span>TEXAS</span>
+                      <span>HOLD&apos;EM</span>
+                    </div>
+                    <CommunityBoard
+                      board={snapshot.board}
+                      yourHoleCards={snapshot.yourHoleCards}
+                      pots={snapshot.pots}
+                      seats={snapshot.seats}
+                      yourSeatIndex={snapshot.yourSeatIndex}
+                      stage={snapshot.stage}
+                      handNumber={snapshot.handNumber}
+                    />
+                  </div>
+                  <SeatRing snapshot={snapshot} onTakeSeat={(seatIndex) => handleSeatAction("seat.take", { seatIndex })} currentTime={currentTime} />
+                </div>
+              </section>
+            </section>
+
             <ActionPanel
               snapshot={snapshot}
               onAction={(action) => handleSeatAction(action.type === "rebuy" ? "player.rebuy" : "action.submit", action.type === "rebuy" ? {} : action)}
@@ -510,26 +465,6 @@ export default function App() {
               onStartHand={() => handleSeatAction("hand.start")}
               onLeaveSeat={() => handleSeatAction("seat.leave")}
             />
-
-            <section className="table-stage">
-              <CommunityBoard
-                board={snapshot.board}
-                yourHoleCards={snapshot.yourHoleCards}
-                pots={snapshot.pots}
-                seats={snapshot.seats}
-                yourSeatIndex={snapshot.yourSeatIndex}
-                stage={snapshot.stage}
-                handNumber={snapshot.handNumber}
-              />
-            </section>
-
-            <section className="seat-panel">
-              <div className="seat-panel-header">
-                <span>座位与最近操作</span>
-                <span className="muted-copy">入座在下方，当前动作与最近操作会直接显示在座位卡片里。</span>
-              </div>
-              <SeatRing snapshot={snapshot} onTakeSeat={(seatIndex) => handleSeatAction("seat.take", { seatIndex })} currentTime={currentTime} />
-            </section>
           </div>
 
           <button type="button" className={`chat-fab ${chatDrawerOpen ? "is-open" : ""}`} onClick={handleToggleChatDrawer}>
@@ -563,12 +498,21 @@ export default function App() {
   );
 }
 
-async function emitWithAck(socket: Socket, event: string, payload: unknown) {
-  const response = await socket.emitWithAck(event, payload) as { ok: boolean; error?: string; snapshot?: RoomSnapshot };
+type SocketAck = { ok: boolean; error?: string; snapshot?: RoomSnapshot };
+
+function unwrapSocketAck(event: string, response: SocketAck) {
   if (!response.ok) {
     throw new Error(response.error ?? `Event ${event} failed`);
   }
   return response.snapshot;
+}
+
+async function emitWithAck(socket: Socket, event: string, payload: unknown) {
+  return unwrapSocketAck(event, await socket.emitWithAck(event, payload) as SocketAck);
+}
+
+async function emitWithAckWithin(socket: Socket, event: string, payload: unknown, timeoutMs: number) {
+  return unwrapSocketAck(event, await socket.timeout(timeoutMs).emitWithAck(event, payload) as SocketAck);
 }
 
 export function resolveSocketOrigin(browserOrigin: string, explicitOrigin?: string) {
@@ -604,12 +548,24 @@ function formatUnreadChatCount(count: number) {
   return count > 99 ? "99+" : String(count);
 }
 
+function stageToTableLabel(stage: string) {
+  return {
+    waiting: "等待开局",
+    preflop: "翻牌前",
+    flop: "翻牌",
+    turn: "转牌",
+    river: "河牌",
+    showdown: "摊牌",
+  }[stage] ?? stage;
+}
+
 declare global {
   interface Window {
     render_game_to_text: () => string;
     __POKER_DEBUG__: {
       advance: (milliseconds: number) => void;
     };
+    advanceTime: (milliseconds: number) => void;
   }
 }
 

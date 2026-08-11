@@ -10,7 +10,6 @@ export function CommunityBoard(props: {
   stage: string;
   handNumber: number;
 }) {
-  const heroCards = resolveHeroCards(props.seats, props.yourSeatIndex, props.yourHoleCards);
   const totalPot = props.pots.reduce((sum, pot) => sum + pot.amount, 0);
   const opponentBets = props.seats
     .filter((seat) => seat.player && seat.seatIndex !== props.yourSeatIndex && seat.player.currentBet > 0)
@@ -22,60 +21,36 @@ export function CommunityBoard(props: {
 
   return (
     <section className="board-panel">
-      <div className="board-header">
-        <span>第 {props.handNumber || 0} 手</span>
-        <span>{stageLabel(props.stage)}</span>
-      </div>
-      <div className="merged-card-row" aria-label="牌面">
-        {heroCards.length > 0 && (
-          <>
-            <div className="merged-card-group merged-card-group-hero" aria-label="你的底牌">
-              {heroCards.map((card, index) => (
-                <PlayingCard key={`${card.rank}-${card.suit}-${index}`} card={card} compact variant="hero" />
+      <div className="board-center-zone">
+        <div className="pot-strip">
+          <span className="pot-total">底池 {totalPot}</span>
+          {props.pots.length > 1 && <span className="pot-side">边池 {props.pots.length - 1}</span>}
+        </div>
+        <div className="merged-card-row" aria-label="牌面">
+          <div className="merged-card-group merged-card-group-board" aria-label="公共牌">
+            {Array.from({ length: 5 }, (_, index) => {
+              const card = props.board[index];
+              return <PlayingCard key={index} card={card} />;
+            })}
+          </div>
+        </div>
+        <div className="bet-focus-row">
+          <span className="bet-focus-label">对手下注</span>
+          {opponentBets.length > 0 ? (
+            <div className="bet-focus-list">
+              {opponentBets.map((bet) => (
+                <span key={`${bet.seatIndex}-${bet.currentBet}`} className="bet-focus-pill">
+                  {bet.nickname} {bet.currentBet}
+                </span>
               ))}
             </div>
-            <span className="merged-card-separator" aria-hidden="true" />
-          </>
-        )}
-        <div className="merged-card-group merged-card-group-board" aria-label="公共牌">
-          {Array.from({ length: 5 }, (_, index) => {
-            const card = props.board[index];
-            return <PlayingCard key={index} card={card} />;
-          })}
+          ) : (
+            <span className="bet-focus-empty">暂无</span>
+          )}
         </div>
-      </div>
-      <div className="pot-strip">
-        <span className="pot-total">底池 {totalPot}</span>
-        {props.pots.length > 1 && <span className="pot-side">边池 {props.pots.length - 1}</span>}
-      </div>
-      <div className="bet-focus-row">
-        <span className="bet-focus-label">对手下注</span>
-        {opponentBets.length > 0 ? (
-          <div className="bet-focus-list">
-            {opponentBets.map((bet) => (
-              <span key={`${bet.seatIndex}-${bet.currentBet}`} className="bet-focus-pill">
-                {bet.nickname} {bet.currentBet}
-              </span>
-            ))}
-          </div>
-        ) : (
-          <span className="bet-focus-empty">暂无</span>
-        )}
       </div>
     </section>
   );
-}
-
-function resolveHeroCards(seats: SeatState[], yourSeatIndex: number | null | undefined, yourHoleCards?: Card[]) {
-  if (yourHoleCards && yourHoleCards.length > 0) {
-    return yourHoleCards;
-  }
-
-  if (yourSeatIndex === null || yourSeatIndex === undefined) {
-    return [];
-  }
-
-  return seats[yourSeatIndex]?.player?.revealedCards ?? [];
 }
 
 function stageLabel(stage: string) {
