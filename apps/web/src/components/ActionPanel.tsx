@@ -259,7 +259,7 @@ function canStartFromSnapshot(snapshot: RoomSnapshot) {
     .filter((player): player is NonNullable<RoomSnapshot["seats"][number]["player"]> => player !== undefined)
     .filter((player) => player.stack > 0 && player.status !== "sit-out" && player.status !== "out");
 
-  return seatedPlayers.length >= 2 && seatedPlayers.every((player) => player.ready && player.presence === "connected");
+  return seatedPlayers.length >= 2 && seatedPlayers.every((player) => player.ready);
 }
 
 function getSeatRoleBadges(room: RoomSnapshot, seatIndex: number) {

@@ -5,6 +5,7 @@ import { createRoomSchema, errorReportSchema, joinRoomSchema } from "@texas-poke
 import type { AppConfig } from "./config";
 import {
   RoomApi,
+  RoomRuntimeError,
   setGuestCookie,
   startTexasRoomRuntime,
   tokenFromRequest,
@@ -74,7 +75,9 @@ export async function buildApp(options: BuildAppOptions) {
 
   app.post<{ Params: { roomId: string } }>("/api/v1/rooms/:roomId/leave", async (request, reply) => {
     try {
+      if (request.headers.origin !== undefined && !origins.includes(request.headers.origin)) throw new RoomRuntimeError("FORBIDDEN", "Origin 不允许");
       await roomService.api.leave(tokenFromRequest(request), request.params.roomId);
+      await roomService.broadcast(request.params.roomId);
       return reply.code(204).send();
     } catch (error) {
       return sendRoomError(reply, error);

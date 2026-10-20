@@ -111,6 +111,14 @@ function syncPresence(state: PokerEngineState, room: Readonly<StoredRoom<TexasSt
   }
 }
 
+function cleanDepartedSeats(engine: PokerEngineState, room: Readonly<StoredRoom<TexasState>>): void {
+  syncPresence(engine, room);
+  if (isHandActive(engine.stage)) return;
+  for (const [index, player] of engine.seats.entries()) {
+    if (player && !room.participants.some((participant) => participant.id === player.sessionId)) removePlayerFromSeat(engine, index);
+  }
+}
+
 function refreshDeadline(engine: PokerEngineState, now: number): void {
   engine.actionDeadlineAt = isHandActive(engine.stage) && engine.actingSeatIndex !== null
     ? new Date(now + engine.config.actionTimeSeconds * 1_000).toISOString()
@@ -155,7 +163,7 @@ export function createTexasAdapter(onRestore?: (roomId: string) => void): GameAd
     }),
     applyCommand: ({ room, state, actor, command, now }) => {
       const next = clone(state);
-      syncPresence(next.engine, room);
+      cleanDepartedSeats(next.engine, room);
       const payload = command.payload ?? {};
       const seatIndex = getSeatBySession(next.engine, actor.id);
       switch (command.type) {
@@ -187,14 +195,19 @@ export function createTexasAdapter(onRestore?: (roomId: string) => void): GameAd
         case "action.submit":
           if (seatIndex === null) throw new RoomRuntimeError("PHASE_MISMATCH", "请先入座");
           applyPlayerAction(next.engine, seatIndex, payload as unknown as PlayerActionCommand, new Date(now));
+          cleanDepartedSeats(next.engine, room);
           refreshDeadline(next.engine, now);
           return { state: next, status: "playing" };
         case "timer.action": {
-          if (seatIndex === null || next.engine.actingSeatIndex !== seatIndex) throw new RoomRuntimeError("PHASE_MISMATCH", "计时器已经过期");
+          const target = next.engine.actingSeatIndex;
+          const deadline = Date.parse(next.engine.actionDeadlineAt ?? "");
+          if (!isHandActive(next.engine.stage) || target === null || !Number.isFinite(deadline) || deadline > now) throw new RoomRuntimeError("PHASE_MISMATCH", "尚未到行动截止时间");
           if (String(payload.deadlineAt ?? "") !== next.engine.actionDeadlineAt) throw new RoomRuntimeError("PHASE_MISMATCH", "计时器已经更新");
-          const actions = getAvailableActions(next.engine, seatIndex);
+          // The member issues only a due timer; the engine determines its target and action.
+          const actions = getAvailableActions(next.engine, target);
           const action: PlayerActionCommand = actions.some((candidate) => candidate.type === "check") ? { type: "check" } : { type: "fold" };
-          applyPlayerAction(next.engine, seatIndex, action, new Date(now));
+          applyPlayerAction(next.engine, target, action, new Date(now));
+          cleanDepartedSeats(next.engine, room);
           refreshDeadline(next.engine, now);
           return { state: next, status: "playing" };
         }
@@ -219,10 +232,9 @@ export function createTexasAdapter(onRestore?: (roomId: string) => void): GameAd
     serialize: clone,
     restore: (value) => clone(value as TexasState),
     rebuildTimers: ({ room }) => onRestore?.(room.id),
-    onParticipantExpired: ({ state, participant }) => {
+    onParticipantExpired: ({ room, state }) => {
       const next = clone(state);
-      const seatIndex = getSeatBySession(next.engine, participant.id);
-      if (seatIndex !== null && !isHandActive(next.engine.stage)) removePlayerFromSeat(next.engine, seatIndex);
+      cleanDepartedSeats(next.engine, room);
       return next;
     },
   };
@@ -328,10 +340,14 @@ export async function startTexasRoomRuntime(app: FastifyInstance, redisUrl: stri
 
   const broadcast = async (roomId: string): Promise<void> => {
     const room = await runtime.loadRoom(roomId);
-    if (!room) {
-      io.to(roomId).emit("room.expired", { roomId });
-      return;
+    for (const socket of io.sockets.sockets.values()) {
+      if (socket.data.roomId !== roomId || room?.participants.some((participant) => participant.id === socket.data.participantId)) continue;
+      delete socket.data.roomId;
+      delete socket.data.participantId;
+      await socket.leave(roomId);
+      socket.emit("room.expired", room ? { roomId, reason: "left" } : { roomId });
     }
+    if (!room) return;
     io.to(roomId).emit("presence.changed", {
       roomId,
       participants: room.participants.map((participant) => ({ participantId: participant.id, presence: participant.presence, connectionCount: Object.keys(participant.connections).length })),
@@ -349,7 +365,7 @@ export async function startTexasRoomRuntime(app: FastifyInstance, redisUrl: stri
     timers.delete(roomId);
     const room = await runtime.loadRoom(roomId);
     const engine = room?.state.engine;
-    if (!room || room.status === "paused" || !engine || !isHandActive(engine.stage) || engine.actingSeatIndex === null || !engine.actionDeadlineAt) return;
+    if (!room || room.participants.length === 0 || room.status === "paused" || !engine || !isHandActive(engine.stage) || engine.actingSeatIndex === null || !engine.actionDeadlineAt) return;
     const actor = engine.seats[engine.actingSeatIndex];
     if (!actor) return;
     const deadlineAt = engine.actionDeadlineAt;
@@ -359,10 +375,13 @@ export async function startTexasRoomRuntime(app: FastifyInstance, redisUrl: stri
       try {
         const latest = await runtime.loadRoom(roomId);
         if (!latest || latest.state.engine.actionDeadlineAt !== deadlineAt || latest.state.engine.actingSeatIndex === null) return;
+        if (Date.now() < Date.parse(deadlineAt)) { await scheduleRoom(roomId); return; }
         const latestActor = latest.state.engine.seats[latest.state.engine.actingSeatIndex];
         if (!latestActor) return;
+        const issuer = latest.participants.find((participant) => participant.id === latestActor.sessionId) ?? latest.participants[0];
+        if (!issuer) return;
         const requestId = `timer:${latest.state.engine.handNumber}:${deadlineAt}:${latest.state.engine.actingSeatIndex}`;
-        await runtime.executeForParticipant(latestActor.sessionId, {
+        await runtime.executeForParticipant(issuer.id, {
           protocolVersion: PROTOCOL_VERSION,
           requestId,
           roomId,
@@ -374,6 +393,11 @@ export async function startTexasRoomRuntime(app: FastifyInstance, redisUrl: stri
         await scheduleRoom(roomId);
       } catch (error) {
         app.log.warn({ err: error, roomId }, "automatic poker action failed");
+        if (error instanceof RoomRuntimeError && ["STALE_REVISION", "FORBIDDEN"].includes(error.code) && !timers.has(roomId)) {
+          const retry = setTimeout(() => void scheduleRoom(roomId), 100);
+          retry.unref();
+          timers.set(roomId, retry);
+        }
       }
     }, delay);
     timer.unref();

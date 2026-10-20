@@ -1432,7 +1432,9 @@ select {
   }
 
   .status-bar {
-    display: none;
+    flex-direction: column;
+    gap: 8px;
+    overflow-wrap: anywhere;
   }
 
   .premium-table-shell {
@@ -1753,3 +1755,5 @@ select {
     width: auto;
   }
 }
+
+.room-controls{min-width:0;margin:0;padding:0;border:0}

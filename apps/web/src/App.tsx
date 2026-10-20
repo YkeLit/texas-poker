@@ -42,12 +42,41 @@ export default function App() {
   const [status, setStatus] = useState("输入昵称，创建房间。");
   const [error, setError] = useState<string | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
+  const [isRoomReady, setIsRoomReady] = useState(false);
+  const roomReadyRef = useRef(false);
+  const retryButtonRef = useRef<HTMLButtonElement | null>(null);
   const [chatDrawerOpen, setChatDrawerOpen] = useState(false);
   const [unreadChatCount, setUnreadChatCount] = useState(0);
   const [clockOffset, setClockOffset] = useState(0);
   const [tick, setTick] = useState(0);
   const socketRef = useRef<Socket | null>(null);
   const chatDrawerOpenRef = useRef(chatDrawerOpen);
+  const roomRef = useRef<RoomSnapshot | null>(null);
+  const epoch = useRef(0);
+  const exitingRef = useRef(false);
+  const entryRef = useRef<number | null>(null);
+  const [isExiting, setIsExiting] = useState(false);
+
+  function clearRoom(message: string) {
+    epoch.current += 1;
+    const socket = socketRef.current;
+    socketRef.current = null;
+    socket?.disconnect();
+    roomRef.current = null;
+    exitingRef.current = false;
+    entryRef.current = null;
+    setIsExiting(false);
+    setIsConnecting(false);
+    roomReadyRef.current = false;
+    setIsRoomReady(false);
+    setChatDrawerOpen(false);
+    setUnreadChatCount(0);
+    localStorage.removeItem(STORAGE_KEYS.roomCode);
+    setRoomCodeDraft("");
+    setSnapshot(null);
+    setError(null);
+    setStatus(message);
+  }
 
   useEffect(() => {
     const interval = window.setInterval(() => setTick((value) => value + 1), 500);
@@ -62,13 +91,6 @@ export default function App() {
       setUnreadChatCount(0);
     }
   }, [chatDrawerOpen]);
-
-  useEffect(() => {
-    if (snapshot?.roomCode) {
-      localStorage.setItem(STORAGE_KEYS.roomCode, snapshot.roomCode);
-      setRoomCodeDraft(snapshot.roomCode);
-    }
-  }, [snapshot?.roomCode]);
 
   useEffect(() => {
     window.render_game_to_text = () =>
@@ -104,12 +126,29 @@ export default function App() {
   }, [snapshot]);
 
   useEffect(() => {
-    if (snapshot) return;
+    let alive = true;
+    const generation = epoch.current;
     void getActiveRoom().then((active) => {
-      if ("activeRoom" in active) return;
+      if (!alive || generation !== epoch.current || "activeRoom" in active) return;
       return connectToRoom(active);
-    }).catch(() => undefined);
+    }).catch(() => {
+      if (alive && generation === epoch.current) {
+        setError("无法恢复房间，请点击恢复房间重试。");
+        setStatus("恢复未完成。");
+      }
+    });
+    return () => {
+      alive = false;
+      epoch.current += 1;
+      const socket = socketRef.current;
+      socketRef.current = null;
+      socket?.disconnect();
+    };
   }, []);
+
+  useEffect(() => {
+    if (snapshot && !isRoomReady) retryButtonRef.current?.focus();
+  }, [isRoomReady, snapshot !== null]);
 
   useEffect(() => {
     const handleError = (event: ErrorEvent) => {
@@ -140,48 +179,142 @@ export default function App() {
   }
 
   async function connectToRoom(room: RoomSummary) {
+    const generation = ++epoch.current;
+    let current = () => false;
     setIsConnecting(true);
+    roomReadyRef.current = false;
+    setIsRoomReady(false);
     setError(null);
     setStatus(`正在连接房间 ${room.roomCode}...`);
 
     try {
       const socket = io(resolveSocketOrigin(window.location.origin, import.meta.env.VITE_SOCKET_ORIGIN), {
-        autoConnect: true,
+        autoConnect: false,
         transports: ["websocket"],
         withCredentials: true,
       });
 
       socketRef.current?.disconnect();
       socketRef.current = socket;
+      current = () => socketRef.current === socket;
+      let attachAttempt = 0;
 
       socket.on("state.snapshot", (nextSnapshot: RoomSnapshot) => {
+        if (!current() || nextSnapshot.roomId !== room.roomId) return;
+        roomRef.current = nextSnapshot;
+        roomReadyRef.current = true;
+        setIsRoomReady(true);
+        setIsConnecting(false);
+        localStorage.setItem(STORAGE_KEYS.roomCode, nextSnapshot.roomCode);
+        setRoomCodeDraft(nextSnapshot.roomCode);
         setSnapshot(nextSnapshot);
-        setStatus(`已进入房间 ${nextSnapshot.roomCode}`);
+        if (!exitingRef.current) setStatus(`已进入房间 ${nextSnapshot.roomCode}`);
+      });
+      socket.on("room.expired", (message: { roomId: string; reason?: string }) => {
+        if (!current() || message?.roomId !== room.roomId) return;
+        if (message.reason === "left") clearRoom("已退出房间。");
+        else if (message.reason === undefined) clearRoom("房间已过期，请重新创建或加入。");
+      });
+      socket.on("disconnect", () => {
+        attachAttempt += 1;
+        if (current()) {
+          roomReadyRef.current = false;
+          setIsRoomReady(false);
+          if (!exitingRef.current) setStatus("连接已中断，正在尝试重连；也可手动重新连接。");
+        }
       });
 
       socket.on("chat.message", (message: ChatMessage) => {
+        if (!current()) return;
         setSnapshot((current) => mergeChatMessage(current, message));
-        if (!chatDrawerOpenRef.current && message.senderSessionId !== snapshot?.participantId) {
+        if (!chatDrawerOpenRef.current && message.senderSessionId !== roomRef.current?.participantId) {
           setUnreadChatCount((current) => Math.min(current + 1, 99));
         }
       });
 
-      socket.on("connect_error", (event) => {
-        setError(event.message);
+      const attachRoom = async () => {
+        if (!current()) return;
+        const attempt = ++attachAttempt;
+        const attachEpoch = epoch.current;
+        const valid = () => current() && attempt === attachAttempt && attachEpoch === epoch.current;
+        try {
+          await emitWithAck(socket, "room.attach", { roomId: room.roomId });
+        } catch (cause) {
+          if (!valid()) return;
+          try {
+            const active = await getActiveRoom();
+            if (!valid()) return;
+            if ("activeRoom" in active && active.activeRoom === null) {
+              clearRoom("已退出或房间已失效，请重新创建或加入。");
+              return;
+            }
+            if ("roomId" in active && typeof active.roomId === "string" && active.roomId !== room.roomId) {
+              await connectToRoom(active);
+              return;
+            }
+          } catch { /* An unconfirmed attach failure keeps the current room. */ }
+          if (!valid()) return;
+          throw cause;
+        }
+        if (!valid()) return;
+        setError(null);
+        localStorage.setItem(STORAGE_KEYS.roomCode, room.roomCode);
+      };
+      await new Promise<void>((resolve, reject) => {
+        socket.on("connect_error", (event) => {
+          if (!current() || exitingRef.current) return;
+          setIsConnecting(false);
+          setError(event.message);
+          reject(event);
+        });
+        socket.on("connect", () => {
+          void attachRoom().then(resolve, (cause) => {
+            if (current() && !exitingRef.current) setError(cause instanceof Error ? cause.message : String(cause));
+            reject(cause);
+          });
+        });
+        socket.connect();
       });
-
-      await emitWithAck(socket, "room.attach", { roomId: room.roomId });
-      setStatus(`已连接到 ${room.roomCode}`);
-      localStorage.setItem(STORAGE_KEYS.roomCode, room.roomCode);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      if (current() && !exitingRef.current) setError(cause instanceof Error ? cause.message : String(cause));
       throw cause;
     } finally {
-      setIsConnecting(false);
+      if (generation === epoch.current && current()) setIsConnecting(false);
+    }
+  }
+
+  async function handleReconnect() {
+    if (exitingRef.current || entryRef.current !== null) return;
+    const generation = ++epoch.current;
+    entryRef.current = generation;
+    const previousSocket = socketRef.current;
+    socketRef.current = null;
+    previousSocket?.disconnect();
+    roomReadyRef.current = false;
+    setIsRoomReady(false);
+    setIsConnecting(true);
+    setError(null);
+    setStatus("正在恢复房间…");
+    try {
+      const active = await getActiveRoom();
+      if (generation !== epoch.current) return;
+      if ("activeRoom" in active) clearRoom("当前没有可恢复的房间，请重新创建或加入。");
+      else await connectToRoom(active);
+    } catch (cause) {
+      if (entryRef.current === generation) {
+        setError(cause instanceof Error ? cause.message : String(cause));
+        setStatus("恢复未完成，请重试。");
+      }
+    } finally {
+      if (entryRef.current === generation) { entryRef.current = null; setIsConnecting(false); }
     }
   }
 
   async function handleCreateRoom() {
+    if (exitingRef.current || entryRef.current !== null) return;
+    const generation = ++epoch.current;
+    entryRef.current = generation;
+    setIsConnecting(true);
     try {
       const nickname = requireNickname();
       const resolvedConfig = parsedConfig;
@@ -191,25 +324,35 @@ export default function App() {
       const response = await createRoom(nickname, {
         ...resolvedConfig,
       });
-      await connectToRoom(response);
+      if (generation === epoch.current) await connectToRoom(response);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      if (entryRef.current === generation) setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      if (entryRef.current === generation) { entryRef.current = null; setIsConnecting(false); }
     }
   }
 
   async function handleJoinRoom() {
+    if (exitingRef.current || entryRef.current !== null) return;
+    const generation = ++epoch.current;
+    entryRef.current = generation;
+    setIsConnecting(true);
     try {
       const response = await joinRoom(roomCodeDraft.trim().toUpperCase(), requireNickname());
-      await connectToRoom(response);
+      if (generation === epoch.current) await connectToRoom(response);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      if (entryRef.current === generation) setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      if (entryRef.current === generation) { entryRef.current = null; setIsConnecting(false); }
     }
   }
 
   async function handleSeatAction(event: string, payload?: unknown) {
+    if (exitingRef.current) return;
+    const generation = epoch.current;
     const socket = socketRef.current;
-    if (!socket) {
-      setError("Socket 尚未连接");
+    if (!socket || !socket.connected || !roomReadyRef.current) {
+      setError("房间连接尚未恢复，请先重新连接。");
       return;
     }
 
@@ -223,37 +366,45 @@ export default function App() {
         type: event,
         payload: payload ?? {},
       });
-      setError(null);
+      if (socketRef.current === socket && generation === epoch.current) setError(null);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      if (socketRef.current === socket && generation === epoch.current) setError(cause instanceof Error ? cause.message : String(cause));
     }
   }
 
   async function handleExitRoom() {
-    const activeSnapshot = snapshot;
-    const socket = socketRef.current;
-
+    const room = roomRef.current;
+    if (!room || exitingRef.current) return;
+    if (room.yourSeatIndex !== null && room.yourSeatIndex !== undefined && !["waiting", "showdown"].includes(room.stage)
+      && !window.confirm("本手会继续；退出后不能返回原座。未完成的行动按原时限自动过牌或弃牌，已全押筹码仍参与本手结算。确定退出房间？")) return;
+    exitingRef.current = true;
+    setIsExiting(true);
     setError(null);
-    setChatDrawerOpen(false);
-    setUnreadChatCount(0);
-
-    if (socket && activeSnapshot?.yourSeatIndex !== null && activeSnapshot?.yourSeatIndex !== undefined && activeSnapshot.stage === "waiting") {
-      try {
-        // A stale WebSocket must not trap a player in the room view. The HTTP
-        // leave request below remains authoritative for cleanup.
-        await emitWithAckWithin(socket, "seat.leave", {}, 1_500);
-      } catch {
-        // Best effort only. Leaving the room view should still work even if the seat cannot be released.
+    setStatus("正在确认退出，请稍候…");
+    const generation = ++epoch.current;
+    try {
+      await leaveRoom(room.roomId);
+      if (generation === epoch.current) clearRoom("已退出房间。");
+    } catch (cause) {
+      if (generation !== epoch.current) return;
+      // An anonymous active-room response cannot confirm a 401 leave.
+      const unauthorized = cause instanceof Error && "status" in cause && cause.status === 401;
+      if (!unauthorized) try {
+        const active = await getActiveRoom();
+        if (generation === epoch.current && (("activeRoom" in active && active.activeRoom === null)
+          || ("roomId" in active && typeof active.roomId === "string" && active.roomId !== room.roomId))) {
+          clearRoom("已退出房间。");
+          return;
+        }
+      } catch { /* Keep the current room if confirmation is unavailable. */ }
+      if (generation === epoch.current) {
+        const network = cause instanceof TypeError || (cause instanceof Error && ["AbortError", "TimeoutError"].includes(cause.name));
+        setError(unauthorized ? "会话已失效，无法确认退出；请刷新后重新创建或加入。" : network ? "网络连接失败或请求超时，请重试。" : cause instanceof Error ? cause.message : "退出房间失败，请重试。");
+        setStatus("退出未确认，请重试。");
       }
+    } finally {
+      if (generation === epoch.current) { exitingRef.current = false; setIsExiting(false); setIsConnecting(false); }
     }
-
-    socket?.disconnect();
-    if (activeSnapshot) await leaveRoom(activeSnapshot.roomId).catch(() => undefined);
-    socketRef.current = null;
-    localStorage.removeItem(STORAGE_KEYS.roomCode);
-    setRoomCodeDraft("");
-    setSnapshot(null);
-    setStatus("已退出房间。");
   }
 
   function handleToggleChatDrawer() {
@@ -398,6 +549,9 @@ export default function App() {
               加入牌桌
             </button>
             <p className="muted-copy">断线后刷新页面会自动尝试重连到最近的房间。</p>
+            <button type="button" className="ghost-btn" disabled={isConnecting} onClick={handleReconnect}>
+              {isConnecting ? "正在恢复…" : "恢复房间"}
+            </button>
           </article>
         </section>
       </main>
@@ -427,13 +581,16 @@ export default function App() {
             <span className="table-meta-chip">{stageToTableLabel(snapshot.stage)}</span>
           </div>
           <div className="top-actions">
-            <button type="button" className="ghost-btn" onClick={handleExitRoom}>
-              退出房间
+            {!isRoomReady && <button ref={retryButtonRef} type="button" className="secondary-btn" disabled={isExiting || isConnecting} aria-busy={isConnecting} onClick={handleReconnect}>
+              {isConnecting ? "正在恢复…" : "重新连接"}
+            </button>}
+            <button type="button" className="ghost-btn" disabled={isExiting} aria-busy={isExiting} onClick={handleExitRoom}>
+              {isExiting ? "正在退出…" : "退出房间"}
             </button>
           </div>
         </header>
 
-        <div className="table-layout">
+        <fieldset className="table-layout room-controls" disabled={isExiting || !isRoomReady} aria-label="牌桌操作">
           <div className="table-main">
             <section className="table-arena">
               <section className="table-stage">
@@ -482,7 +639,7 @@ export default function App() {
               canSend={snapshot.yourSeatIndex !== null && snapshot.yourSeatIndex !== undefined}
             />
           </aside>
-        </div>
+        </fieldset>
       </main>
     );
   }
@@ -492,27 +649,23 @@ export default function App() {
       {snapshot ? renderTable() : renderLobby()}
       <footer className="status-bar">
         <span>{status}</span>
-        {error && <span className="error-copy">{error}</span>}
+        {error && <span className="error-copy" role="alert">{error}</span>}
       </footer>
     </div>
   );
 }
 
-type SocketAck = { ok: boolean; error?: string; snapshot?: RoomSnapshot };
+type SocketAck = { ok: boolean; error?: string | { message?: string; code?: string }; snapshot?: RoomSnapshot };
 
 function unwrapSocketAck(event: string, response: SocketAck) {
   if (!response.ok) {
-    throw new Error(response.error ?? `Event ${event} failed`);
+    throw new Error(typeof response.error === "string" ? response.error : response.error?.message ?? response.error?.code ?? `Event ${event} failed`);
   }
   return response.snapshot;
 }
 
 async function emitWithAck(socket: Socket, event: string, payload: unknown) {
-  return unwrapSocketAck(event, await socket.emitWithAck(event, payload) as SocketAck);
-}
-
-async function emitWithAckWithin(socket: Socket, event: string, payload: unknown, timeoutMs: number) {
-  return unwrapSocketAck(event, await socket.timeout(timeoutMs).emitWithAck(event, payload) as SocketAck);
+  return unwrapSocketAck(event, await socket.timeout(8000).emitWithAck(event, payload) as SocketAck);
 }
 
 export function resolveSocketOrigin(browserOrigin: string, explicitOrigin?: string) {

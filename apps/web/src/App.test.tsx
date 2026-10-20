@@ -305,6 +305,35 @@ describe("web components", () => {
     expect(markup).toContain("开始下一手");
   });
 
+  it("allows the host to continue a hand while a disconnected ready player is within the grace period", () => {
+    const markup = renderToStaticMarkup(
+      <ActionPanel
+        snapshot={{
+          ...snapshot,
+          stage: "showdown",
+          yourAvailableActions: [],
+          seats: snapshot.seats.map((seat) => seat.player
+            ? {
+                ...seat,
+                player: {
+                  ...seat.player,
+                  ready: true,
+                  status: "waiting",
+                  presence: seat.seatIndex === 1 ? "disconnected" : "connected",
+                },
+              }
+            : seat),
+        }}
+        onAction={() => undefined}
+        onToggleReady={() => undefined}
+        onStartHand={() => undefined}
+        onLeaveSeat={() => undefined}
+      />,
+    );
+
+    expect(markup).toContain("开始下一手");
+  });
+
   it("renders the latest player action on seat cards", () => {
     const markup = renderToStaticMarkup(
       <SeatRing

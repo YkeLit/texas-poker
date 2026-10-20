@@ -95,3 +95,13 @@ docker compose up -d
 - `window.advanceTime(ms)`
 
 这两个接口可用于自动化回归和 Playwright 驱动测试。
+
+## 本地维护：永久退出后端（2026-10-15）
+
+当前本地修复了永久退出当前行动者后计时器因身份已移除而卡局的问题。原截止时间不变，服务端仍自动check/fold；已全押的投入保留到本手结算后才清座。成功退出撤销该身份所有旧房连接并发送room.expired的reason:left通知；安全Cookie、内部CAS/命令nonce、普通断线保席和runtime1.1.1保留。
+
+后端e688ae04基线通过40项测试、四包构建与两名独立真实API验收，包括自然手牌、边池和已退行动者的重启计时恢复。页面最终a7已补多标签left/过期、退出确认、8秒失败重试与迟到响应保护；真实Cookie失效保留房间，手机错误提示可见。42项测试、四包构建、双独立同基线局部验收和两轮页面通过，退出后刷新不回旧房。开局后新访客即便showdown仍不能join的旧限制、本手结束后的原status与空房TTL不变。原规则角色/实机和全8款矩阵未完成。
+
+本机复现脚本：先启动独立无卷回环Redis空DB，然后设置TEST_REDIS_URL与TEST_OUTPUT_DIR，执行 `node --import tsx apps/server/tests/exit-api-smoke.mjs`。脚本通过真实HTTP/Socket.IO运行，只清自己namespace；不指向现有玩家Redis。完整记录在navigation工作区docs/boardgames-stage3-poker-exit-api-20261015.md。
+
+退出页面回归：隔离本机服务启动后设置BASE_URL、OUTPUT_DIR，执行 `node apps/web/exit-ui-smoke.mjs`。本批真实三人自然12动作完整手牌、16模拟尺寸与独立四街退出/all-in结算通过；新增手动重连、原规则角色与真机/8款完整矩阵仍未完成，未发布部署。详细页面证据见navigation工作区docs/boardgames-stage3-poker-exit-ui-20261015.md。
