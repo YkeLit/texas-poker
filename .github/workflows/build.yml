@@ -98,7 +98,6 @@ jobs:
         with:
           images: |
             ghcr.io/${{ github.repository }}-server
-            ${{ env.ALIYUN_REGISTRY_USERNAME != '' && env.ALIYUN_REGISTRY_PASSWORD != '' && format('{0}/{1}-server', env.REGISTRY_ALIYUN, env.IMAGE_NAME_ALIYUN) || '' }}
             ${{ env.DOCKERHUB_USERNAME != '' && format('{0}/texas-poker-server', env.DOCKERHUB_USERNAME) || '' }}
           tags: |
             type=ref,event=branch
@@ -117,6 +116,33 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Aliyun Docker metadata
+        if: env.ALIYUN_REGISTRY_USERNAME != '' && env.ALIYUN_REGISTRY_PASSWORD != ''
+        id: meta_aliyun
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY_ALIYUN }}/${{ env.IMAGE_NAME_ALIYUN }}-server
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,prefix=
+            type=semver,pattern={{version}}
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push registry-compatible Aliyun image
+        if: env.ALIYUN_REGISTRY_USERNAME != '' && env.ALIYUN_REGISTRY_PASSWORD != ''
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./apps/server/Dockerfile
+          provenance: false
+          sbom: false
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta_aliyun.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+
 
   build-frontend:
     needs: ci
@@ -165,7 +191,6 @@ jobs:
         with:
           images: |
             ghcr.io/${{ github.repository }}-web
-            ${{ env.ALIYUN_REGISTRY_USERNAME != '' && env.ALIYUN_REGISTRY_PASSWORD != '' && format('{0}/{1}-web', env.REGISTRY_ALIYUN, env.IMAGE_NAME_ALIYUN) || '' }}
             ${{ env.DOCKERHUB_USERNAME != '' && format('{0}/texas-poker-web', env.DOCKERHUB_USERNAME) || '' }}
           tags: |
             type=ref,event=branch
@@ -184,3 +209,29 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Aliyun Docker metadata
+        if: env.ALIYUN_REGISTRY_USERNAME != '' && env.ALIYUN_REGISTRY_PASSWORD != ''
+        id: meta_aliyun
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY_ALIYUN }}/${{ env.IMAGE_NAME_ALIYUN }}-web
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,prefix=
+            type=semver,pattern={{version}}
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push registry-compatible Aliyun image
+        if: env.ALIYUN_REGISTRY_USERNAME != '' && env.ALIYUN_REGISTRY_PASSWORD != ''
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./apps/web/Dockerfile
+          provenance: false
+          sbom: false
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta_aliyun.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
